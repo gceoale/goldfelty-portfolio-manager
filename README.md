@@ -89,6 +89,23 @@ machine, run it as `xvfb-run -a npm run smoke`.
 Tests run on Node's native TypeScript stripping — no build step, no test
 framework dependency.
 
+## Installing on macOS
+
+These builds are unsigned, so macOS quarantine will report the app as
+"damaged and can't be opened". It is not damaged — Gatekeeper rejects
+unsigned downloads outright instead of offering an "open anyway" prompt.
+Clear the quarantine flag once, after moving the app to Applications:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"
+```
+
+Builds are ad-hoc signed (`scripts/afterPack.cjs`) so the bundle is
+internally consistent and runs on Apple silicon once quarantine is cleared.
+Making Gatekeeper trust the download without that step needs a real Developer
+ID certificate and notarisation — set `CSC_LINK`, `CSC_KEY_PASSWORD` and the
+`APPLE_*` secrets and the release workflow signs and notarises automatically.
+
 ## Building installers
 
 ```bash

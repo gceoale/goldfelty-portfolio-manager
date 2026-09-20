@@ -12,6 +12,7 @@ files:
   - '!**/{.eslintrc,.editorconfig,.prettierrc,tsconfig*.json}'
   - '!**/*.map'
 
+afterPack: scripts/afterPack.cjs
 asar: true
 electronDownload:
   cache: .cache/electron

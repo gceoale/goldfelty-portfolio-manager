@@ -22,11 +22,32 @@ chmod +x 'Goldfelty Portfolio Manager-1.0.1-x86_64.AppImage'
 
 ## Read this before you put money in it
 
-**These builds are unsigned.** macOS Gatekeeper and Windows SmartScreen will
-both object, because nothing here is signed with a developer certificate. On
-macOS you will need to right-click → Open and confirm; on Windows, "More info"
-→ "Run anyway". That warning is correct and you should take it seriously — only
-bypass it for a file you fetched from this releases page.
+**These builds are unsigned, and macOS will refuse them by default.**
+
+On a Mac you will most likely see:
+
+> "Goldfelty Portfolio Manager" is damaged and can't be opened. You should
+> move it to the Trash.
+
+The app is not damaged. macOS quarantines anything downloaded from the
+internet, and because these builds carry no Apple Developer ID certificate,
+Gatekeeper rejects them rather than offering the usual "open anyway" prompt.
+Clear the quarantine flag after dragging the app to Applications:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"
+```
+
+Then open it normally. You only need to do this once per install.
+
+On Windows, SmartScreen will object for the same reason — choose "More info"
+then "Run anyway".
+
+Only bypass either warning for a file you fetched from this releases page.
+Both warnings exist precisely to stop you running an unsigned binary of
+unknown origin, and a wallet is exactly the kind of program an attacker would
+want to substitute. Verifying what you downloaded matches what CI built is
+worth the two minutes.
 
 **Nothing here has been audited.** Neither the desktop application nor the
 contracts in `contracts/` have had an independent security review. Treat this
