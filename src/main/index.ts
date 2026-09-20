@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { Store } from './store.ts'
 import { Vault } from './vault.ts'
 import { registerIpc, startAutoLock, type Runtime } from './ipc.ts'
+import { registerDeepLinks, onDeepLink } from './deepLinks.ts'
 import { WalletConnectService } from './walletconnect.ts'
 import { ExtensionBridge } from './extensionBridge.ts'
 import { disposeProviders } from './rpc.ts'
@@ -18,6 +19,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.setName('Goldfelty Portfolio Manager')
+registerDeepLinks()
 
 let runtime: Runtime
 let autoLockTimer: NodeJS.Timeout | undefined
@@ -222,16 +224,17 @@ void app.whenReady().then(() => {
 
   mainWindow = createWindow()
 
+  // A pairing URI handed to us by a wallet or a web page.
+  onDeepLink((link) => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+    mainWindow.webContents.send('app:deepLink', link)
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
   })
-})
-
-app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
-  }
 })
 
 app.on('window-all-closed', () => {

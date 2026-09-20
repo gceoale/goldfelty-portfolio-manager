@@ -40,6 +40,9 @@ mac:
   extendInfo:
     NSCameraUsageDescription: Goldfelty does not use the camera.
     LSApplicationCategoryType: public.app-category.finance
+protocols:
+  - name: Goldfelty
+    schemes: [goldfelty]
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
   contents:
