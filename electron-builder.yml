@@ -1,0 +1,97 @@
+appId: com.goldfelty.portfolio
+productName: Goldfelty Portfolio Manager
+copyright: Copyright © 2026 Goldfelty
+
+directories:
+  buildResources: resources
+  output: release/${version}
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/{.eslintrc,.editorconfig,.prettierrc,tsconfig*.json}'
+  - '!**/*.map'
+
+asar: true
+electronDownload:
+  cache: .cache/electron
+
+# ---------------------------------------------------------------------------
+# macOS — Apple silicon (arm64) and Intel (x64), plus a universal binary.
+# ---------------------------------------------------------------------------
+mac:
+  category: public.app-category.finance
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # electron-builder derives .icns from this 1024px source.
+  icon: resources/icon.png
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSCameraUsageDescription: Goldfelty does not use the camera.
+    LSApplicationCategoryType: public.app-category.finance
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  contents:
+    - x: 140
+      y: 190
+      type: file
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
+
+# ---------------------------------------------------------------------------
+# Windows — x64 and ARM64 (Snapdragon / Windows on ARM).
+# ---------------------------------------------------------------------------
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+    - target: portable
+      arch: [x64, arm64]
+  # electron-builder derives .ico from this 1024px source.
+  icon: resources/icon.png
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# ---------------------------------------------------------------------------
+# Linux — x64 and ARM64.
+# ---------------------------------------------------------------------------
+linux:
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+    - target: rpm
+      arch: [x64, arm64]
+    - target: tar.gz
+      arch: [x64, arm64]
+  icon: resources/icons
+  category: Office;Finance
+  maintainer: Goldfelty <support@goldfelty.com>
+  synopsis: Multi-wallet smart-account portfolio manager
+  desktop:
+    entry:
+      Name: Goldfelty Portfolio Manager
+      StartupWMClass: goldfelty-portfolio-manager
+appImage:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: gceoalexyt-ops
+  repo: goldfelty-portfolio-manager
