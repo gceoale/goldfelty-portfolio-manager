@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { Store } from './store.ts'
 import { Vault } from './vault.ts'
 import { registerIpc, startAutoLock, type Runtime } from './ipc.ts'
+import { WalletConnectService } from './walletconnect.ts'
+import { ExtensionBridge } from './extensionBridge.ts'
 import { disposeProviders } from './rpc.ts'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -188,6 +190,10 @@ void app.whenReady().then(() => {
   const store = new Store(dataDir)
   const vault = new Vault(dataDir)
 
+  const walletConnect = new WalletConnectService(dataDir)
+  walletConnect.setProjectId(store.settings.walletConnectProjectId)
+  const bridge = new ExtensionBridge()
+
   runtime = {
     store,
     vault,
@@ -195,8 +201,18 @@ void app.whenReady().then(() => {
     lastPortfolioAt: 0,
     lastActivity: Date.now(),
     onboardingTicket: null,
-    backupConfirmed: store.account?.backedUp ?? false
+    backupConfirmed: store.account?.backedUp ?? false,
+    walletConnect,
+    bridge
   }
+
+  // A wallet app dropping its session must be visible immediately, not at the
+  // next refresh — the user needs to know they can no longer sign.
+  const announce = (): void => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send('connections:changed')
+  }
+  walletConnect.onConnectionsChanged(announce)
+  bridge.onConnectionsChanged(announce)
 
   nativeTheme.themeSource = store.settings.theme
   applyContentSecurityPolicy()
@@ -227,6 +243,9 @@ app.on('before-quit', () => {
   runtime?.vault.lock()
   runtime?.store.flush()
   if (autoLockTimer) clearInterval(autoLockTimer)
+  // The bridge holds a listening socket; leaving it bound would keep the
+  // process alive and keep a signing endpoint open after the window is gone.
+  void runtime?.bridge.stop()
   disposeProviders()
 })
 

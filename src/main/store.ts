@@ -25,7 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
   priceProviderUrl: 'https://api.coingecko.com/api/v3',
   customRpc: {},
   enabledChains: [...DEFAULT_CHAIN_IDS],
-  telemetry: false
+  telemetry: false,
+  walletConnectProjectId: ''
 }
 
 const EMPTY: StoreData = {

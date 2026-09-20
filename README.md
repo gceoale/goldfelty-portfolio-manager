@@ -27,6 +27,25 @@ more than one wallet can take the token, you choose before the address is
 copyable. You get a QR code, the address, and a warning naming the exact network
 that address is safe on.
 
+**Connecting wallets** — three routes, because no single one reaches
+everything:
+
+- **WalletConnect** for wallet apps you already use: MetaMask, Rainbow, Trust,
+  Phantom, Coinbase Wallet and several hundred others, by QR code from a phone
+  or deep link to a wallet on this computer. Needs a free project ID from
+  [cloud.reown.com](https://cloud.reown.com), entered once in Settings.
+- **Browser extension bridge** for MetaMask, Rabby or Phantom running in your
+  browser. Extensions are unreachable from a desktop app, so Goldfelty serves a
+  page on loopback (`127.0.0.1`, single-use token, cross-origin refused) and
+  opens it in your browser. That tab is the connection — closing it disconnects.
+- **Goldfelty's own smart accounts**, derived from your recovery phrase, for
+  people who do not already have a wallet.
+
+Connected wallets are used as they are: your existing address, your existing
+balance, nothing to deploy. Goldfelty holds no key for them and asks the wallet
+app to approve every transfer, so there is no password prompt on those sends —
+the approval happens where the keys live.
+
 **Settings** — connect wallets, watch external addresses, rename and archive,
 choose networks and custom RPC endpoints, set theme, currency, auto-lock and
 refresh interval, change your password, and manage your goldfelty.com account.

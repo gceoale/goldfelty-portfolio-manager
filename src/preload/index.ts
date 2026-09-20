@@ -6,6 +6,7 @@ import type {
   HistoryRange,
   Portfolio,
   RecoveryMaterial,
+  PendingConnection,
   ReceivableAsset,
   Result,
   RouteOption,
@@ -15,7 +16,8 @@ import type {
   Settings,
   TokenDef,
   TransferRecord,
-  Wallet
+  Wallet,
+  WalletConnection
 } from '../shared/types.ts'
 
 /**
@@ -110,6 +112,17 @@ const api = {
     symbols: (): Promise<Result<ReceivableAsset[]>> => ipcRenderer.invoke('receive:symbols'),
     routes: (symbol: string): Promise<Result<RouteOption[]>> => ipcRenderer.invoke('receive:routes', symbol)
   },
+  connections: {
+    list: (): Promise<Result<WalletConnection[]>> => ipcRenderer.invoke('connections:list'),
+    walletConnectConfigured: (): Promise<Result<boolean>> =>
+      ipcRenderer.invoke('connections:walletConnectConfigured'),
+    connectWalletConnect: (): Promise<Result<PendingConnection>> =>
+      ipcRenderer.invoke('connections:connectWalletConnect'),
+    connectExtension: (): Promise<Result<PendingConnection>> =>
+      ipcRenderer.invoke('connections:connectExtension'),
+    disconnect: (connectionId: string): Promise<Result<{ detached: number }>> =>
+      ipcRenderer.invoke('connections:disconnect', connectionId)
+  },
   settings: {
     get: (): Promise<Result<Settings>> => ipcRenderer.invoke('settings:get'),
     update: (patch: Partial<Settings>): Promise<Result<Settings>> => ipcRenderer.invoke('settings:update', patch),
@@ -128,7 +141,16 @@ const api = {
     onUnlocked: (fn: () => void): Unsubscribe => on('app:unlocked', () => fn()),
     onSettingsChanged: (fn: (settings: Settings) => void): Unsubscribe =>
       on('settings:changed', (payload) => fn(payload as Settings)),
-    onPortfolioInvalidate: (fn: () => void): Unsubscribe => on('portfolio:invalidate', () => fn())
+    onPortfolioInvalidate: (fn: () => void): Unsubscribe => on('portfolio:invalidate', () => fn()),
+    onConnectionsChanged: (fn: () => void): Unsubscribe => on('connections:changed', () => fn()),
+    onConnectionApproved: (
+      fn: (payload: { connection: WalletConnection; wallets: Wallet[] }) => void
+    ): Unsubscribe =>
+      on('connections:approved', (payload) =>
+        fn(payload as { connection: WalletConnection; wallets: Wallet[] })
+      ),
+    onConnectionFailed: (fn: (message: string) => void): Unsubscribe =>
+      on('connections:failed', (payload) => fn((payload as { message: string }).message))
   }
 }
 

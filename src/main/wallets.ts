@@ -69,7 +69,9 @@ export function connectSmartWallets(
       enabledTokens: options.enabledTokens ?? [],
       color: WALLET_COLORS[(existing + i) % WALLET_COLORS.length],
       createdAt: Date.now(),
-      archived: false
+      archived: false,
+      connectionId: null,
+      providerName: null
     }
     created.push(wallet)
   }
@@ -112,10 +114,89 @@ export function connectWatchWallet(
     enabledTokens: [],
     color: WALLET_COLORS[store.wallets.length % WALLET_COLORS.length],
     createdAt: Date.now(),
-    archived: false
+    archived: false,
+    connectionId: null,
+    providerName: null
   }
   store.addWallet(wallet)
   return wallet
+}
+
+/**
+ * Register the accounts an external wallet app just shared with us.
+ *
+ * These are ordinary EOAs living in MetaMask, Rainbow, a hardware wallet —
+ * wherever the user already keeps them. Goldfelty holds no key for them and
+ * can only ask that app to sign. Re-connecting an address that is already
+ * present re-points it at the new connection rather than duplicating it.
+ */
+export function connectExternalWallets(
+  store: Store,
+  options: {
+    connectionId: string
+    kind: 'walletconnect' | 'extension'
+    providerName: string
+    accounts: string[]
+    chainIds: number[]
+  }
+): Wallet[] {
+  const chainIds = validateChains(options.chainIds)
+  const result: Wallet[] = []
+
+  for (const raw of options.accounts) {
+    if (!isAddress(raw)) continue
+    const address = getAddress(raw)
+
+    const existing = store.wallets.find((w) => w.address.toLowerCase() === address.toLowerCase())
+    if (existing) {
+      const updated = store.updateWallet(existing.id, {
+        kind: options.kind,
+        connectionId: options.connectionId,
+        providerName: options.providerName,
+        chainIds,
+        archived: false
+      })
+      if (updated) result.push(updated)
+      continue
+    }
+
+    if (store.wallets.length >= MAX_WALLETS) throw new WalletLimitError(MAX_WALLETS)
+
+    const wallet: Wallet = {
+      id: randomUUID(),
+      label: `${options.providerName} ${address.slice(0, 6)}`,
+      kind: options.kind,
+      address,
+      // The key is in the user's own wallet app; we have no owner to derive.
+      ownerAddress: null,
+      derivationIndex: null,
+      salt: '0x',
+      chainIds,
+      // An EOA needs no deployment, so it is live everywhere it is connected.
+      deployedOn: chainIds,
+      enabledTokens: [],
+      color: WALLET_COLORS[store.wallets.length % WALLET_COLORS.length],
+      createdAt: Date.now(),
+      archived: false,
+      connectionId: options.connectionId,
+      providerName: options.providerName
+    }
+    store.addWallet(wallet)
+    result.push(wallet)
+  }
+
+  return result
+}
+
+/** Mark every wallet belonging to a dropped connection as unable to sign. */
+export function detachConnection(store: Store, connectionId: string): number {
+  let count = 0
+  for (const wallet of store.wallets) {
+    if (wallet.connectionId !== connectionId) continue
+    store.updateWallet(wallet.id, { connectionId: null })
+    count++
+  }
+  return count
 }
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "goldfelty-portfolio-manager",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Goldfelty Portfolio Manager \u2014 a multi-wallet smart-account portfolio manager for macOS, Windows and Linux.",
   "author": "Goldfelty",
   "homepage": "https://goldfelty.com",
@@ -21,6 +21,8 @@
     "icons": "python3 scripts/make-icons.py"
   },
   "dependencies": {
+    "@walletconnect/sign-client": "^2.25.0",
+    "@walletconnect/utils": "^2.25.0",
     "electron-updater": "^6.3.9",
     "ethers": "^6.13.4",
     "qrcode": "^1.5.4"

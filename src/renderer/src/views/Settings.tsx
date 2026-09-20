@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
-import type { Settings as SettingsShape, Wallet } from '@shared/types.js'
+import type { Settings as SettingsShape, Wallet, WalletConnection } from '@shared/types.js'
 import { Banner, Button, Card, CopyButton, EmptyState, Field, Modal, PasswordInput, Switch } from '../components/ui.js'
 import {
   IconAlert,
@@ -10,11 +10,11 @@ import {
   IconLock,
   IconPencil,
   IconPlus,
-  IconSearch,
   IconShield,
   IconTrash,
   IconWallet
 } from '../components/Icons.js'
+import { ConnectWalletModal } from '../components/ConnectWalletModal.js'
 import { useApp } from '../state/app.js'
 import { dateTime, shortAddress } from '../lib/format.js'
 
@@ -66,6 +66,8 @@ export function Settings(): JSX.Element {
 
 function WalletsSection(): JSX.Element {
   const { wallets, chains, settings, maxWallets, refreshWallets, refreshPortfolio, notify, run } = useApp()
+  const [chooserOpen, setChooserOpen] = useState(false)
+  const [connections, setConnections] = useState<WalletConnection[]>([])
   const [connectOpen, setConnectOpen] = useState(false)
   const [watchOpen, setWatchOpen] = useState(false)
   const [editing, setEditing] = useState<Wallet | null>(null)
@@ -83,6 +85,19 @@ function WalletsSection(): JSX.Element {
   useEffect(() => {
     if (settings && chainIds.length === 0) setChainIds(settings.enabledChains)
   }, [settings, chainIds.length])
+
+  const loadConnections = useCallback(async () => {
+    const list = await run(window.goldfelty.connections.list(), 'Could not read wallet connections')
+    if (list) setConnections(list)
+  }, [run])
+
+  useEffect(() => {
+    void loadConnections()
+    return window.goldfelty.events.onConnectionsChanged(() => {
+      void loadConnections()
+      void refreshWallets()
+    })
+  }, [loadConnections, refreshWallets])
 
   const active = wallets.filter((w) => !w.archived)
   const remaining = maxWallets - wallets.length
@@ -139,20 +154,15 @@ function WalletsSection(): JSX.Element {
         title="Connected wallets"
         description={`${active.length} active of ${maxWallets} possible. Every smart wallet is derived from your recovery phrase, so one backup covers all of them.`}
         action={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Button size="sm" onClick={() => setWatchOpen(true)} icon={<IconSearch size={14} />}>
-              Watch an address
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              icon={<IconPlus size={14} />}
-              disabled={remaining <= 0}
-              onClick={() => setConnectOpen(true)}
-            >
-              Connect wallet
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<IconPlus size={14} />}
+            disabled={remaining <= 0}
+            onClick={() => setChooserOpen(true)}
+          >
+            Connect wallet
+          </Button>
         }
       >
         {remaining <= 0 && (
@@ -179,12 +189,13 @@ function WalletsSection(): JSX.Element {
             icon={<IconWallet size={20} />}
             title="No wallets yet"
             action={
-              <Button variant="primary" onClick={() => setConnectOpen(true)}>
+              <Button variant="primary" onClick={() => setChooserOpen(true)}>
                 Connect your first wallet
               </Button>
             }
           >
-            A wallet here is a smart-contract account with an owner key derived from your recovery phrase.
+            Connect a wallet you already use — MetaMask, Rainbow, Phantom, Coinbase Wallet — or let Goldfelty
+            create smart-contract accounts for you.
           </EmptyState>
         ) : (
           <div className="wallet-list">
@@ -222,6 +233,67 @@ function WalletsSection(): JSX.Element {
           </div>
         )}
       </Card>
+
+      {connections.length > 0 && (
+        <Card
+          title="Connected wallet apps"
+          description="Goldfelty holds no keys for these. Every transfer is approved in the app itself."
+        >
+          {connections.map((connection) => (
+            <div key={connection.id} className="setting">
+              <div className="setting__body">
+                <div className="setting__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {connection.name}
+                  <span className={`tag ${connection.active ? 'tag--positive' : 'tag--negative'}`}>
+                    {connection.active ? 'Connected' : 'Disconnected'}
+                  </span>
+                  <span className="tag">
+                    {connection.kind === 'walletconnect' ? 'WalletConnect' : 'Browser extension'}
+                  </span>
+                </div>
+                <div className="setting__desc">
+                  {connection.accounts.length} {connection.accounts.length === 1 ? 'account' : 'accounts'} ·{' '}
+                  {connection.accounts.map((a: string) => shortAddress(a)).join(', ')}
+                </div>
+                {!connection.active && connection.kind === 'extension' && (
+                  <div className="setting__desc" style={{ color: 'var(--warning)' }}>
+                    The browser tab was closed. Reconnect to sign again.
+                  </div>
+                )}
+              </div>
+              <div className="setting__control">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    void run(
+                      window.goldfelty.connections.disconnect(connection.id),
+                      'Could not disconnect'
+                    ).then(async (result) => {
+                      if (!result) return
+                      notify({
+                        tone: 'info',
+                        title: `${connection.name} disconnected`,
+                        text: `${result.detached} ${result.detached === 1 ? 'wallet' : 'wallets'} can no longer send`
+                      })
+                      await loadConnections()
+                      await refreshWallets()
+                    })
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <ConnectWalletModal
+        open={chooserOpen}
+        onClose={() => setChooserOpen(false)}
+        onCreateOwn={() => setConnectOpen(true)}
+        onWatch={() => setWatchOpen(true)}
+      />
 
       {/* ---- connect smart wallets ------------------------------------- */}
       <Modal

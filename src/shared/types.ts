@@ -4,7 +4,21 @@
  * is safe to hand to the renderer process.
  */
 
-export type WalletKind = 'smart' | 'watch'
+/**
+ * How a wallet got into the app.
+ *
+ * - `walletconnect` / `extension` are wallets the user already owns, reached
+ *   through their own app. Goldfelty never holds their keys and asks them to
+ *   sign every transaction.
+ * - `smart` is a contract account this app derived from its own seed.
+ * - `watch` is an address tracked without any ability to spend.
+ */
+export type WalletKind = 'smart' | 'watch' | 'walletconnect' | 'extension'
+
+/** True for wallets whose keys live in somebody else's app. */
+export function isExternal(kind: WalletKind): boolean {
+  return kind === 'walletconnect' || kind === 'extension'
+}
 
 /** A connected wallet. Smart wallets are contract accounts owned by a derived signer. */
 export interface Wallet {
@@ -28,6 +42,10 @@ export interface Wallet {
   color: string
   createdAt: number
   archived: boolean
+  /** For external wallets: the connection that can sign for this address. */
+  connectionId: string | null
+  /** Name of the wallet app holding the keys, e.g. "MetaMask". */
+  providerName: string | null
 }
 
 export interface Chain {
@@ -143,6 +161,8 @@ export interface Settings {
   customRpc: Record<number, string>
   enabledChains: number[]
   telemetry: boolean
+  /** Free project ID from cloud.reown.com. WalletConnect does nothing without it. */
+  walletConnectProjectId: string
 }
 
 export interface AppStatus {
@@ -240,4 +260,32 @@ export interface ReceivableAsset {
   color: string
   chains: string[]
   wallets: number
+}
+
+
+/** A live link to a wallet application the user controls. */
+export interface WalletConnection {
+  id: string
+  kind: 'walletconnect' | 'extension'
+  /** The wallet app's own name, as it reports it. */
+  name: string
+  icon: string | null
+  /** Addresses this connection can sign for. */
+  accounts: string[]
+  /** Chains the wallet agreed to operate on. */
+  chainIds: number[]
+  connectedAt: number
+  /** False once the wallet app disconnects or the session expires. */
+  active: boolean
+  /** WalletConnect session topic; null for the extension bridge. */
+  topic: string | null
+}
+
+/** A pending connection the user still has to approve in their wallet. */
+export interface PendingConnection {
+  /** WalletConnect pairing URI, for the QR code and deep links. */
+  uri: string
+  /** Where to point a browser for the extension bridge. */
+  bridgeUrl?: string
+  expiresAt: number
 }
