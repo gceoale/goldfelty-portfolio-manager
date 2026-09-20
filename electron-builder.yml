@@ -28,6 +28,9 @@ mac:
       arch: [arm64, x64]
   # electron-builder derives .icns from this 1024px source.
   icon: resources/icon.png
+  # Without this the default-arch (x64) zip is named "-mac.zip" with no arch,
+  # while the arm64 one is "-arm64-mac.zip". Name both the same way.
+  artifactName: ${productName}-${version}-${arch}-mac.${ext}
   darkModeSupport: true
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -60,14 +63,19 @@ win:
       arch: [x64, arm64]
   # electron-builder derives .ico from this 1024px source.
   icon: resources/icon.png
-  artifactName: ${productName}-${version}-${arch}-setup.${ext}
 nsis:
+  # nsis and portable are both served by NsisTarget, so a shared
+  # win.artifactName made them write to the same paths and silently clobber
+  # each other. Each target names its own output.
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
+portable:
+  artifactName: ${productName}-${version}-${arch}-portable.${ext}
 
 # ---------------------------------------------------------------------------
 # Linux — x64 and ARM64.
@@ -86,12 +94,20 @@ linux:
   category: Office;Finance
   maintainer: Goldfelty <support@goldfelty.com>
   synopsis: Multi-wallet smart-account portfolio manager
+  # Covers tar.gz, whose x64 build was otherwise named with no arch at all.
+  # deb and rpm restate their own defaults below so they keep the naming
+  # their ecosystems expect (amd64/arm64, x86_64/aarch64).
+  artifactName: ${name}-${version}-${arch}.${ext}
   desktop:
     entry:
       Name: Goldfelty Portfolio Manager
       StartupWMClass: goldfelty-portfolio-manager
 appImage:
   artifactName: ${productName}-${version}-${arch}.${ext}
+deb:
+  artifactName: ${name}_${version}_${arch}.${ext}
+rpm:
+  artifactName: ${name}-${version}.${arch}.${ext}
 
 publish:
   provider: github
