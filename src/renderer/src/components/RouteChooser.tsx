@@ -64,8 +64,8 @@ export function RouteChooser({
       {!single && (
         <Banner tone="info">
           {mode === 'send'
-            ? `${routes.length} of your wallets hold ${symbol}. Pick the one to route this transfer through — the fee, the network and the remaining balance all depend on it.`
-            : `${routes.length} of your wallets can accept ${symbol}. Choose one before you copy an address — sending ${symbol} to the right wallet on the wrong network can put it out of reach.`}
+            ? `${routes.length} wallets hold ${symbol}. Pick which one pays.`
+            : `${routes.length} wallets take ${symbol}. Pick one before copying an address.`}
         </Banner>
       )}
 

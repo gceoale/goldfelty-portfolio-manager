@@ -54,7 +54,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
                 </Button>
               }
             >
-              Connect a smart account in Settings and your balances, growth and allocation will appear here.
+              Connect one in Settings and it shows up here.
             </EmptyState>
           </Card>
         </div>
@@ -67,8 +67,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
       <div className="view__inner">
         {portfolio?.degraded && (
           <Banner tone="warning" title="Some figures could not be refreshed">
-            At least one network or the price feed did not answer. The numbers below include the last values
-            Goldfelty was able to read, and the growth chart is paused until a clean refresh comes through.
+            A network or the price feed did not answer. Figures below are the last known good ones, and the chart is paused until a clean read.
           </Banner>
         )}
 
@@ -152,12 +151,11 @@ export function Home({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
           <Card
             flush
             title="Assets"
-            description="Every token, pooled across the wallets holding it. Select one to see the breakdown."
+            description="Pooled across every wallet holding them."
           >
             {holdings.length === 0 ? (
               <EmptyState icon={<IconLayers size={20} />} title="No balances found">
-                Once any connected wallet holds a token Goldfelty tracks, it shows up here. Use the Receive tab to
-                get an address.
+                Nothing held yet. Grab an address from Receive.
               </EmptyState>
             ) : (
               <div className="rows">
@@ -229,7 +227,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
             <Card title="Allocation">
               {holdings.length === 0 || total === 0 ? (
                 <p className="muted" style={{ fontSize: 12.5 }}>
-                  Allocation appears once your wallets hold something with a price.
+                  Nothing priced yet.
                 </p>
               ) : (
                 <>
@@ -256,10 +254,10 @@ export function Home({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
               )}
             </Card>
 
-            <Card title="Top wallets" description="By value held.">
+            <Card title="Top wallets">
               {topWallets.length === 0 ? (
                 <p className="muted" style={{ fontSize: 12.5 }}>
-                  Wallet totals appear after the first successful refresh.
+                  Waiting on a first refresh.
                 </p>
               ) : (
                 <div className="legend">
@@ -277,7 +275,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
             <Card title="Recent activity">
               {transfers.length === 0 ? (
                 <p className="muted" style={{ fontSize: 12.5 }}>
-                  Transfers you make from Goldfelty are listed here.
+                  Nothing sent yet.
                 </p>
               ) : (
                 <div className="legend">

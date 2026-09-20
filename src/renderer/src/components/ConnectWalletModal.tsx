@@ -128,7 +128,7 @@ export function ConnectWalletModal({
       title="Connect a wallet"
       description={
         method === 'choose'
-          ? 'Use a wallet you already have, or let Goldfelty create one for you.'
+          ? 'Use one you already have, or make a new one.'
           : undefined
       }
       onClose={onClose}
@@ -139,20 +139,20 @@ export function ConnectWalletModal({
           <MethodCard
             icon={<IconLink size={17} />}
             title="Wallet app"
-            body="MetaMask, Rainbow, Trust, Phantom, Coinbase Wallet and 500+ others. Scan a QR code from your phone, or open a wallet installed on this computer."
+            body="MetaMask, Rainbow, Phantom, Coinbase and 500 others. Scan from your phone, or open a wallet on this machine."
             badge="Recommended"
             onClick={() => void startWalletConnect()}
           />
           <MethodCard
             icon={<IconExternal size={17} />}
             title="Browser extension"
-            body="MetaMask, Rabby or Phantom running in your browser. Opens a page in your default browser to make the connection."
+            body="MetaMask, Rabby or Phantom in your browser."
             onClick={() => void startExtension()}
           />
           <MethodCard
             icon={<IconWallet size={17} />}
             title="Create wallets in Goldfelty"
-            body="Smart-contract accounts derived from your recovery phrase. Use this if you do not already have a wallet."
+            body="New smart accounts from your recovery phrase."
             onClick={() => {
               onClose()
               onCreateOwn()
@@ -161,7 +161,7 @@ export function ConnectWalletModal({
           <MethodCard
             icon={<IconSearch size={17} />}
             title="Watch an address"
-            body="Track any address in your portfolio without being able to spend from it."
+            body="Track an address without being able to spend it."
             onClick={() => {
               onClose()
               onWatch()
@@ -222,8 +222,7 @@ export function ConnectWalletModal({
                   </div>
                 )}
                 <p className="muted" style={{ fontSize: 13, maxWidth: 360 }}>
-                  Scan this with your wallet app, or copy the link and paste it into a wallet on this computer.
-                  Goldfelty never sees your keys — your wallet approves every transaction.
+                  Scan with your wallet, or paste the link into one on this machine. Your wallet approves everything; we never see a key.
                 </p>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <CopyButton value={pending.uri} label="Copy link" />
@@ -247,12 +246,10 @@ export function ConnectWalletModal({
             A page has opened in your default browser. Approve the connection there and it will appear here.
           </Banner>
           <p className="muted" style={{ fontSize: 13 }}>
-            Extensions live inside the browser and cannot be reached from a desktop app directly, so Goldfelty
-            serves a small page on this computer only (127.0.0.1) for your wallet to talk to.
+            Extensions cannot be reached from a desktop app, so this serves a page on 127.0.0.1 for your wallet to talk to.
           </p>
           <Banner tone="warning" title="Keep that tab open">
-            The browser tab is the connection. Closing it disconnects the wallet, and Goldfelty will not be able to
-            request signatures until you reconnect.
+            The tab is the connection. Close it and signing stops until you reconnect.
           </Banner>
           {pending?.bridgeUrl && (
             <Field label="If the page did not open" hint="Paste this into the browser where your extension is installed.">
