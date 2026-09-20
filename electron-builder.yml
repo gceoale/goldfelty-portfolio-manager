@@ -39,9 +39,11 @@ mac:
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
   contents:
+    # The app entry carries no `type`: electron-builder fills in the built
+    # .app itself. Saying `type: file` without a `path` makes it resolve the
+    # path to the project directory and fail with "not a file".
     - x: 140
       y: 190
-      type: file
     - x: 400
       y: 190
       type: link
