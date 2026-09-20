@@ -1,0 +1,103 @@
+name: Build desktop installers
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  build:
+    name: ${{ matrix.label }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS: Apple silicon and Intel. macos-14 runners are arm64, so the
+          # x64 slice is cross-compiled from the same host.
+          - os: macos-14
+            label: macOS (arm64 + x64)
+            command: npm run dist:mac
+          # Windows: x64 and ARM64 (Windows on ARM).
+          - os: windows-latest
+            label: Windows (x64 + arm64)
+            command: npm run dist:win
+          # Linux: x64 and ARM64.
+          - os: ubuntu-latest
+            label: Linux (x64 + arm64)
+            command: npm run dist:linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # electron-builder shells out to rpmbuild for .rpm and needs binfmt
+      # registered to package an arm64 payload on an x64 runner.
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm
+          docker run --rm --privileged tonistiigi/binfmt --install arm64 || true
+
+      - run: npm ci
+
+      - name: Build installers
+        run: ${{ matrix.command }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code signing stays opt-in: without these secrets the build still
+          # produces working (unsigned) artifacts rather than failing.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldfelty-${{ runner.os }}
+          retention-days: 14
+          path: |
+            release/*/*.dmg
+            release/*/*.zip
+            release/*/*.exe
+            release/*/*.AppImage
+            release/*/*.deb
+            release/*/*.rpm
+            release/*/*.tar.gz
+
+  publish:
+    name: Attach to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          draft: true
+          generate_release_notes: true
