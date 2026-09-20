@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { getAddress } from 'ethers'
-import SignClient from '@walletconnect/sign-client'
+// Named import, not default: under ESM the default export resolves to the
+// CJS namespace object, whose `.init` is undefined. The named export is the
+// class. Getting this wrong fails only at runtime, on the first connect.
+import { SignClient } from '@walletconnect/sign-client'
+
+/** The instance type, derived from the factory since the export is a value. */
+type SignClientInstance = Awaited<ReturnType<typeof SignClient.init>>
 import type { PendingConnection, WalletConnection } from '../shared/types.ts'
 import { CHAINS } from '../shared/chains.ts'
 
@@ -23,6 +29,34 @@ const METADATA = {
 /** How long a pairing QR stays valid before the user has to start again. */
 const PAIRING_TTL_MS = 5 * 60_000
 
+/**
+ * The project ID shipped with the build.
+ *
+ * A WalletConnect project ID identifies *this application* to the relay, not
+ * the person using it — it is a public client identifier, in the same category
+ * as an RPC key embedded in a web frontend, and is not a secret. One is baked
+ * in at build time so the app works out of the box; expecting every user to
+ * register their own developer account before they can connect a wallet would
+ * be an absurd thing to ask.
+ *
+ * Goldfelty's own ID is the default below. Committing it leaks nothing: it is
+ * compiled into every binary we publish, so anyone who wants it can read it
+ * out of a download. Keeping it in source means forks and local builds work
+ * without ceremony.
+ *
+ * Override it at build time with MAIN_VITE_WALLETCONNECT_PROJECT_ID (the
+ * release workflow reads a WALLETCONNECT_PROJECT_ID repository variable, so
+ * the ID can be rotated without touching code), or per install from
+ * Settings → Wallets for anyone who would rather use their own relay quota.
+ */
+const DEFAULT_PROJECT_ID = '45a3a9aee7eef2930bc09bfb38507bc8'
+
+const BUILT_IN_PROJECT_ID: string =
+  ((import.meta as unknown as { env?: Record<string, string | undefined> }).env
+    ?.MAIN_VITE_WALLETCONNECT_PROJECT_ID ||
+    process.env.GOLDFELTY_WALLETCONNECT_PROJECT_ID ||
+    DEFAULT_PROJECT_ID).trim()
+
 export class WalletConnectNotConfiguredError extends Error {
   code = 'WC_NO_PROJECT_ID'
   constructor() {
@@ -33,9 +67,10 @@ export class WalletConnectNotConfiguredError extends Error {
 }
 
 export class WalletConnectService {
-  private client: SignClient | null = null
-  private initPromise: Promise<SignClient> | null = null
-  private projectId: string | null = null
+  private client: SignClientInstance | null = null
+  private initPromise: Promise<SignClientInstance> | null = null
+  /** A user-supplied override, if they set one. */
+  private override: string | null = null
   private readonly connections = new Map<string, WalletConnection>()
   private onChange: (() => void) | null = null
 
@@ -43,15 +78,25 @@ export class WalletConnectService {
 
   setProjectId(projectId: string | null): void {
     const next = projectId?.trim() || null
-    if (next === this.projectId) return
-    this.projectId = next
+    if (next === this.override) return
+    this.override = next
     // The client is bound to a project ID, so it has to be rebuilt.
     this.client = null
     this.initPromise = null
   }
 
+  /** The override when the user set one, otherwise whatever shipped. */
+  private get projectId(): string | null {
+    return this.override || BUILT_IN_PROJECT_ID || null
+  }
+
   get configured(): boolean {
     return !!this.projectId
+  }
+
+  /** True when the build shipped an ID, so the user need not supply one. */
+  get hasBuiltIn(): boolean {
+    return BUILT_IN_PROJECT_ID.length > 0
   }
 
   onConnectionsChanged(fn: () => void): void {
@@ -62,7 +107,7 @@ export class WalletConnectService {
     this.onChange?.()
   }
 
-  private async ensureClient(): Promise<SignClient> {
+  private async ensureClient(): Promise<SignClientInstance> {
     if (!this.projectId) throw new WalletConnectNotConfiguredError()
     if (this.client) return this.client
     if (!this.initPromise) {
@@ -80,7 +125,7 @@ export class WalletConnectService {
     return this.initPromise
   }
 
-  private bind(client: SignClient): void {
+  private bind(client: SignClientInstance): void {
     client.on('session_delete', ({ topic }) => {
       this.markInactive(topic)
     })
@@ -98,7 +143,7 @@ export class WalletConnectService {
   }
 
   /** Sessions survive restarts, so pick up anything the client already holds. */
-  private adoptExistingSessions(client: SignClient): void {
+  private adoptExistingSessions(client: SignClientInstance): void {
     for (const session of client.session.getAll()) {
       this.record(session)
     }

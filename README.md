@@ -32,8 +32,7 @@ everything:
 
 - **WalletConnect** for wallet apps you already use: MetaMask, Rainbow, Trust,
   Phantom, Coinbase Wallet and several hundred others, by QR code from a phone
-  or deep link to a wallet on this computer. Needs a free project ID from
-  [cloud.reown.com](https://cloud.reown.com), entered once in Settings.
+  or deep link to a wallet on this computer.
 - **Browser extension bridge** for MetaMask, Rabby or Phantom running in your
   browser. Extensions are unreachable from a desktop app, so Goldfelty serves a
   page on loopback (`127.0.0.1`, single-use token, cross-origin refused) and
@@ -124,6 +123,25 @@ internally consistent and runs on Apple silicon once quarantine is cleared.
 Making Gatekeeper trust the download without that step needs a real Developer
 ID certificate and notarisation — set `CSC_LINK`, `CSC_KEY_PASSWORD` and the
 `APPLE_*` secrets and the release workflow signs and notarises automatically.
+
+## WalletConnect project ID
+
+A WalletConnect project ID identifies *the application* to the relay network.
+It is a public client identifier, not a secret — the same category as an RPC
+key embedded in a web frontend — and one ID serves every user of the app.
+
+Create one free at [cloud.reown.com](https://cloud.reown.com) and set it as a
+repository **variable** named `WALLETCONNECT_PROJECT_ID`. The release workflow
+bakes it into the build, and nobody installing the app ever has to think about
+it. Building locally:
+
+```bash
+MAIN_VITE_WALLETCONNECT_PROJECT_ID=your_id npm run build
+```
+
+If a build ships without one, the app falls back to asking the user for their
+own and says why. Settings keeps an override field for self-builders who would
+rather use their own relay quota.
 
 ## Building installers
 

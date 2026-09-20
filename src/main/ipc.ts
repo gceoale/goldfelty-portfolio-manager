@@ -314,7 +314,10 @@ export function registerIpc(runtime: Runtime): void {
     ...(runtime.bridge.current ? [runtime.bridge.current] : [])
   ])
 
-  handle('connections:walletConnectConfigured', () => runtime.walletConnect.configured)
+  handle('connections:walletConnectConfigured', () => ({
+    configured: runtime.walletConnect.configured,
+    builtIn: runtime.walletConnect.hasBuiltIn
+  }))
 
   handle('connections:connectWalletConnect', async () => {
     touch()

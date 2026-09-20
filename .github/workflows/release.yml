@@ -109,6 +109,11 @@ jobs:
         run: ${{ matrix.command }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Baked into the bundle so users never have to supply one. A
+          # WalletConnect project ID is a public client identifier, not a
+          # secret, so a repository variable is the right home for it; the
+          # secret is accepted too for anyone who prefers that.
+          MAIN_VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.WALLETCONNECT_PROJECT_ID || secrets.WALLETCONNECT_PROJECT_ID }}
 
       - uses: actions/upload-artifact@v4
         with:

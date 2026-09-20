@@ -31,10 +31,20 @@ export function ConnectWalletModal({
   const [qr, setQr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [projectId, setProjectId] = useState('')
+  // Whether this build shipped a project ID. When it did, the user never sees
+  // the setup form — the ID identifies the app, not them.
+  const [ready, setReady] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (settings) setProjectId(settings.walletConnectProjectId)
   }, [settings])
+
+  useEffect(() => {
+    if (!open) return
+    void window.goldfelty.connections.walletConnectConfigured().then((result) => {
+      if (result.ok) setReady(result.data.configured)
+    })
+  }, [open])
 
   useEffect(() => {
     if (!open) {
@@ -84,9 +94,10 @@ export function ConnectWalletModal({
 
   const startWalletConnect = useCallback(async () => {
     setMethod('walletconnect')
-    // Without a project ID the relay call fails immediately. Show the one-time
-    // setup form rather than an error the user cannot act on.
-    if (!settings?.walletConnectProjectId) return
+    // Without any project ID the relay call fails immediately. Show the setup
+    // form rather than an error the user cannot act on. Normally the build
+    // ships one, so this never appears.
+    if (ready === false) return
     setBusy(true)
     const result = await run(window.goldfelty.connections.connectWalletConnect(), 'Could not start WalletConnect')
     setBusy(false)
@@ -95,7 +106,7 @@ export function ConnectWalletModal({
       return
     }
     setPending(result)
-  }, [run, settings?.walletConnectProjectId])
+  }, [run, ready])
 
   const startExtension = useCallback(async () => {
     setBusy(true)
@@ -109,7 +120,7 @@ export function ConnectWalletModal({
     setPending(result)
   }, [run])
 
-  const needsProjectId = !settings?.walletConnectProjectId
+  const needsProjectId = ready === false
 
   return (
     <Modal
@@ -163,9 +174,10 @@ export function ConnectWalletModal({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {needsProjectId ? (
             <>
-              <Banner tone="warning" title="WalletConnect needs a project ID">
-                WalletConnect routes through its own relay network, and that needs a free project ID. Create one at
-                cloud.reown.com — it takes about two minutes — then paste it here.
+              <Banner tone="warning" title="This build shipped without a WalletConnect project ID">
+                Normally the app comes with one and this step does not exist. This build does not have it set, so
+                you will need your own — create a free one at cloud.reown.com, it takes about two minutes. It
+                identifies the app to the relay, not you.
               </Banner>
               <Field label="Project ID" hint="Stored locally. It identifies this app to the relay, and is not a secret key.">
                 <input

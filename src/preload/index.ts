@@ -114,7 +114,7 @@ const api = {
   },
   connections: {
     list: (): Promise<Result<WalletConnection[]>> => ipcRenderer.invoke('connections:list'),
-    walletConnectConfigured: (): Promise<Result<boolean>> =>
+    walletConnectConfigured: (): Promise<Result<{ configured: boolean; builtIn: boolean }>> =>
       ipcRenderer.invoke('connections:walletConnectConfigured'),
     connectWalletConnect: (): Promise<Result<PendingConnection>> =>
       ipcRenderer.invoke('connections:connectWalletConnect'),
