@@ -17,10 +17,10 @@ type Step = 'welcome' | 'password' | 'account' | 'recovery' | 'confirm' | 'usern
 const ORDER: Step[] = ['welcome', 'password', 'account', 'recovery', 'confirm', 'username', 'wallets', 'done']
 
 const BACKUP_CHECKS = [
-  'I have written down my 24-word recovery phrase and stored it somewhere only I can reach.',
-  'I understand Goldfelty cannot recover my phrase, my password, or my funds if I lose them.',
-  'I know anyone who sees this phrase can take everything in every wallet it controls.',
-  'I did not store the phrase in a screenshot, a photo, a note app, or a password manager sync.'
+  'I wrote the 24 words down and stored them somewhere only I can reach.',
+  'Nobody can recover the phrase, the password or the funds for me.',
+  'Anyone who sees the phrase can take everything it controls.',
+  'It is not in a screenshot, a photo or a synced note.'
 ]
 
 export function Onboarding(): JSX.Element {
@@ -158,21 +158,19 @@ export function Onboarding(): JSX.Element {
         {step === 'welcome' && (
           <>
             <div>
-              <h1 className="gate__title">A home for every wallet you hold.</h1>
+              <h1 className="gate__title">Every wallet, one place.</h1>
               <p className="gate__lede" style={{ marginTop: 10 }}>
-                Connect up to 256 smart-contract wallets across seven networks, watch them grow in one place, and
-                send or receive on any of them. Setting up takes about two minutes.
+                Bring the wallets you already use into one place, or make new ones. Two minutes to set up.
               </p>
             </div>
             <Banner tone="warning" title="Read this before you put real money here">
-              This is independent software that has not been through a third-party security audit. Try it with an
-              amount you would not mind losing until it has been.
+              No third-party audit yet. Use an amount you would not mind losing.
             </Banner>
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {[
-                { icon: <IconLock size={16} />, title: 'Your password never leaves this computer', body: 'It is stretched with scrypt and used to encrypt your vault. There is no copy on any server.' },
-                { icon: <IconShield size={16} />, title: 'One phrase restores everything', body: 'Every wallet you connect is derived from a single recovery phrase you will write down in a moment.' },
-                { icon: <IconWallet size={16} />, title: 'Smart accounts, not bare keys', body: 'Each wallet is a contract account with one owner key, so it can send, receive and batch calls.' }
+                { icon: <IconLock size={16} />, title: 'Your password stays here', body: 'It encrypts the vault on this machine. No server has a copy.' },
+                { icon: <IconShield size={16} />, title: 'One phrase restores everything', body: 'Wallets made here come from a single phrase you write down in a moment.' },
+                { icon: <IconWallet size={16} />, title: 'Or bring your own', body: 'Connect MetaMask, Rainbow or anything else you already use.' }
               ].map((item) => (
                 <div key={item.title} style={{ display: 'flex', gap: 12 }}>
                   <span style={{ color: 'var(--accent)', marginTop: 2 }}>{item.icon}</span>
@@ -196,8 +194,7 @@ export function Onboarding(): JSX.Element {
             <div>
               <h1 className="gate__title">Choose a password</h1>
               <p className="gate__lede" style={{ marginTop: 8 }}>
-                This unlocks Goldfelty on this computer and encrypts everything it stores. Nobody can reset it for
-                you — not even us.
+                Unlocks the app and encrypts what it stores. Nobody can reset it.
               </p>
             </div>
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -245,8 +242,7 @@ export function Onboarding(): JSX.Element {
             <div>
               <h1 className="gate__title">Create your goldfelty.com account</h1>
               <p className="gate__lede" style={{ marginTop: 8 }}>
-                Your email links this vault to goldfelty.com for release notes and support. Your password and
-                recovery phrase are never sent — the account is proved with a signature from your wallet key.
+                For release notes and support. Your password and phrase are never sent; the account is proved by signature.
               </p>
             </div>
             <div className="card">
@@ -290,14 +286,12 @@ export function Onboarding(): JSX.Element {
             <div>
               <h1 className="gate__title">Write down your recovery phrase</h1>
               <p className="gate__lede" style={{ marginTop: 8 }}>
-                These 24 words rebuild every wallet in this vault on any computer. This is the only time Goldfelty
-                will ever show them to you.
+                These 24 words rebuild your wallets on any machine. Shown once, now.
               </p>
             </div>
 
             <Banner tone="danger" title="This screen never comes back">
-              Once you continue, the phrase and private key are sealed inside the encrypted vault. There is no
-              &ldquo;show me again&rdquo; anywhere in the app.
+              After this the phrase is sealed. There is no way to show it again.
             </Banner>
 
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -316,7 +310,7 @@ export function Onboarding(): JSX.Element {
                       Reveal phrase
                     </Button>
                     <span className="muted" style={{ fontSize: 12 }}>
-                      Make sure nobody is looking at your screen.
+                      Check nobody is looking.
                     </span>
                   </div>
                 )}
@@ -331,7 +325,7 @@ export function Onboarding(): JSX.Element {
                     notify({
                       tone: 'info',
                       title: 'Phrase copied',
-                      text: 'The clipboard clears itself in 90 seconds. Paste it somewhere offline.'
+                      text: 'Clipboard clears in 90 seconds. Paste it somewhere offline.'
                     })
                   }
                 />
@@ -372,7 +366,7 @@ export function Onboarding(): JSX.Element {
                     notify({
                       tone: 'info',
                       title: 'Recovery sheet saved',
-                      text: 'Print it, then delete the file. A file on disk is not a backup.'
+                      text: 'Print it, then delete the file.'
                     })
                   }}
                 >
@@ -404,7 +398,7 @@ export function Onboarding(): JSX.Element {
             <div>
               <h1 className="gate__title">Confirm your backup</h1>
               <p className="gate__lede" style={{ marginTop: 8 }}>
-                Four statements. Tick them only if each one is genuinely true.
+                Tick these only if they are true.
               </p>
             </div>
             <div className="checklist">
@@ -451,7 +445,7 @@ export function Onboarding(): JSX.Element {
             <div>
               <h1 className="gate__title">Pick your username</h1>
               <p className="gate__lede" style={{ marginTop: 8 }}>
-                This is how you appear on goldfelty.com. Lowercase letters, numbers, hyphens and underscores.
+                How you appear on goldfelty.com.
               </p>
             </div>
             <div className="card">
@@ -499,8 +493,7 @@ export function Onboarding(): JSX.Element {
             <div>
               <h1 className="gate__title">Connect your first wallets</h1>
               <p className="gate__lede" style={{ marginTop: 8 }}>
-                Each one is a separate smart account with its own address, all recoverable from the phrase you just
-                wrote down. You can add more — up to 256 — at any time in Settings.
+                Separate accounts, all from the phrase you just wrote down. Add more later in Settings.
               </p>
             </div>
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -528,8 +521,7 @@ export function Onboarding(): JSX.Element {
               </Field>
               {walletCount > 50 && (
                 <Banner tone="info">
-                  Connecting {walletCount} wallets means {walletCount} addresses to scan on every refresh. It works,
-                  but expect refreshes to take a few seconds longer.
+                  {walletCount} addresses to scan each refresh. Expect it to take a little longer.
                 </Banner>
               )}
             </div>

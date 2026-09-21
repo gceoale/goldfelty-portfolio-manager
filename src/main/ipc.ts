@@ -2,7 +2,18 @@ import { BrowserWindow, app, clipboard, ipcMain, shell } from 'electron'
 import { Store } from './store.ts'
 import { Vault, WeakPasswordError } from './vault.ts'
 import { scorePassword } from './crypto.ts'
-import { connectSmartWallets, connectWatchWallet, reconcileWallets, recoverWallets, MAX_WALLETS } from './wallets.ts'
+import {
+  connectSmartWallets,
+  connectWatchWallet,
+  connectExternalWallets,
+  detachConnection,
+  reconcileWallets,
+  recoverWallets,
+  MAX_WALLETS
+} from './wallets.ts'
+import type { WalletConnectService } from './walletconnect.ts'
+import type { ExtensionBridge } from './extensionBridge.ts'
+import type { ExternalSender } from './transfers.ts'
 import { loadPortfolio } from './portfolio.ts'
 import { executeTransfer, quoteTransfer, receiveRoutes, routesForSymbol } from './transfers.ts'
 import { checkUsername, linkExistingAccount, registerAccount, validateEmail, validateUsername } from './goldfelty.ts'
@@ -32,6 +43,8 @@ export interface Runtime {
   lastPortfolioAt: number
   lastActivity: number
   onboardingTicket: string | null
+  walletConnect: WalletConnectService
+  bridge: ExtensionBridge
   /** Set when the user confirms the seed backup, before the account exists. */
   backupConfirmed: boolean
 }
@@ -241,7 +254,7 @@ export function registerIpc(runtime: Runtime): void {
         routes: 0
       }
       const wallet = store.wallet(balance.walletId)
-      if (!wallet || wallet.kind !== 'smart') continue
+      if (!wallet || wallet.kind === 'watch') continue
       entry.amount += balance.amount
       entry.value += balance.value
       entry.routes += 1
@@ -251,8 +264,10 @@ export function registerIpc(runtime: Runtime): void {
   })
 
   handle('send:routes', (symbol: string, amount = 0) =>
+    // Everything except watch-only can send: our own smart accounts, and the
+    // user's own wallets reached over WalletConnect or the browser bridge.
     routesForSymbol(store, runtime.lastBalances, String(symbol), Number(amount) || 0).filter(
-      (route) => route.walletKind === 'smart'
+      (route) => route.walletKind !== 'watch'
     )
   )
 
@@ -265,7 +280,7 @@ export function registerIpc(runtime: Runtime): void {
   handle('send:execute', async (input: { walletId: string; tokenKey: string; to: string; amount: string; password: string }) => {
     requireUnlocked(runtime)
     touch()
-    const result = await executeTransfer(store, vault, input)
+    const result = await executeTransfer(store, vault, input, externalSender(runtime))
     broadcast('portfolio:invalidate')
     return result
   })
@@ -293,6 +308,70 @@ export function registerIpc(runtime: Runtime): void {
 
   handle('receive:routes', (symbol: string) => receiveRoutes(store, String(symbol)))
 
+  // ---- external wallet connections ---------------------------------------
+  handle('connections:list', () => [
+    ...runtime.walletConnect.list(),
+    ...(runtime.bridge.current ? [runtime.bridge.current] : [])
+  ])
+
+  handle('connections:walletConnectConfigured', () => ({
+    configured: runtime.walletConnect.configured,
+    builtIn: runtime.walletConnect.hasBuiltIn
+  }))
+
+  handle('connections:connectWalletConnect', async () => {
+    touch()
+    runtime.walletConnect.setProjectId(store.settings.walletConnectProjectId)
+    const { pending, approved } = await runtime.walletConnect.connect(store.settings.enabledChains)
+
+    // Resolve in the background: the UI shows the QR straight away and is told
+    // separately once the user approves in their wallet.
+    void approved
+      .then((connection) => {
+        const created = connectExternalWallets(store, {
+          connectionId: connection.id,
+          kind: 'walletconnect',
+          providerName: connection.name,
+          accounts: connection.accounts,
+          chainIds: connection.chainIds.length > 0 ? connection.chainIds : store.settings.enabledChains
+        })
+        broadcast('connections:approved', { connection, wallets: created })
+      })
+      .catch((error: Error) => broadcast('connections:failed', { message: error.message }))
+
+    return pending
+  })
+
+  handle('connections:connectExtension', async () => {
+    touch()
+    const { url, connected } = await runtime.bridge.start(store.settings.enabledChains)
+
+    void connected
+      .then((connection) => {
+        const created = connectExternalWallets(store, {
+          connectionId: connection.id,
+          kind: 'extension',
+          providerName: connection.name,
+          accounts: connection.accounts,
+          chainIds: connection.chainIds.length > 0 ? connection.chainIds : store.settings.enabledChains
+        })
+        broadcast('connections:approved', { connection, wallets: created })
+      })
+      .catch((error: Error) => broadcast('connections:failed', { message: error.message }))
+
+    await shell.openExternal(url)
+    return { uri: url, bridgeUrl: url, expiresAt: Date.now() + 5 * 60_000 }
+  })
+
+  handle('connections:disconnect', async (connectionId: string) => {
+    const id = String(connectionId)
+    if (runtime.bridge.current?.id === id) await runtime.bridge.disconnect()
+    else await runtime.walletConnect.disconnect(id)
+    const detached = detachConnection(store, id)
+    broadcast('connections:changed')
+    return { detached }
+  })
+
   // ---- settings ----------------------------------------------------------
   handle('settings:get', () => store.settings)
 
@@ -300,6 +379,9 @@ export function registerIpc(runtime: Runtime): void {
     touch()
     const next = store.updateSettings(patch ?? {})
     if (patch?.currency) clearPriceMemory()
+    if (patch?.walletConnectProjectId !== undefined) {
+      runtime.walletConnect.setProjectId(next.walletConnectProjectId)
+    }
     broadcast('settings:changed', next)
     return next
   })
@@ -329,6 +411,19 @@ export function registerIpc(runtime: Runtime): void {
     userData: app.getPath('userData'),
     logs: app.getPath('logs')
   }))
+}
+
+/** Route a transfer to whichever transport owns the wallet's keys. */
+function externalSender(runtime: Runtime): ExternalSender {
+  return {
+    async send(wallet, chainId, tx) {
+      if (!wallet.connectionId) throw new Error('That wallet is no longer connected.')
+      if (wallet.kind === 'extension') {
+        return runtime.bridge.request('eth_sendTransaction', [tx])
+      }
+      return runtime.walletConnect.sendTransaction(wallet.connectionId, chainId, tx)
+    }
+  }
 }
 
 /**

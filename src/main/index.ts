@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { Store } from './store.ts'
 import { Vault } from './vault.ts'
 import { registerIpc, startAutoLock, type Runtime } from './ipc.ts'
+import { registerDeepLinks, onDeepLink } from './deepLinks.ts'
+import { WalletConnectService } from './walletconnect.ts'
+import { ExtensionBridge } from './extensionBridge.ts'
 import { disposeProviders } from './rpc.ts'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -16,6 +19,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.setName('Goldfelty Portfolio Manager')
+registerDeepLinks()
 
 let runtime: Runtime
 let autoLockTimer: NodeJS.Timeout | undefined
@@ -188,6 +192,10 @@ void app.whenReady().then(() => {
   const store = new Store(dataDir)
   const vault = new Vault(dataDir)
 
+  const walletConnect = new WalletConnectService(dataDir)
+  walletConnect.setProjectId(store.settings.walletConnectProjectId)
+  const bridge = new ExtensionBridge()
+
   runtime = {
     store,
     vault,
@@ -195,8 +203,18 @@ void app.whenReady().then(() => {
     lastPortfolioAt: 0,
     lastActivity: Date.now(),
     onboardingTicket: null,
-    backupConfirmed: store.account?.backedUp ?? false
+    backupConfirmed: store.account?.backedUp ?? false,
+    walletConnect,
+    bridge
   }
+
+  // A wallet app dropping its session must be visible immediately, not at the
+  // next refresh — the user needs to know they can no longer sign.
+  const announce = (): void => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send('connections:changed')
+  }
+  walletConnect.onConnectionsChanged(announce)
+  bridge.onConnectionsChanged(announce)
 
   nativeTheme.themeSource = store.settings.theme
   applyContentSecurityPolicy()
@@ -206,16 +224,17 @@ void app.whenReady().then(() => {
 
   mainWindow = createWindow()
 
+  // A pairing URI handed to us by a wallet or a web page.
+  onDeepLink((link) => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+    mainWindow.webContents.send('app:deepLink', link)
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
   })
-})
-
-app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
-  }
 })
 
 app.on('window-all-closed', () => {
@@ -227,6 +246,9 @@ app.on('before-quit', () => {
   runtime?.vault.lock()
   runtime?.store.flush()
   if (autoLockTimer) clearInterval(autoLockTimer)
+  // The bridge holds a listening socket; leaving it bound would keep the
+  // process alive and keep a signing endpoint open after the window is gone.
+  void runtime?.bridge.stop()
   disposeProviders()
 })
 

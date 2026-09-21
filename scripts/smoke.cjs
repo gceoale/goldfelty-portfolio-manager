@@ -95,10 +95,21 @@ fs.mkdirSync(USER_DATA, { recursive: true })
   await goTo('Settings')
   await shot('11-settings-wallets')
   await page.getByRole('button', { name: 'Connect wallet' }).click()
-  await page.waitForTimeout(600)
-  await shot('12-connect-modal')
-  await page.getByRole('button', { name: 'Cancel' }).click()
-  await page.waitForTimeout(300)
+  await page.waitForTimeout(700)
+  await shot('12-connect-chooser')
+
+  // The chooser should offer real wallet apps, not just Goldfelty's own.
+  const methods = await page.locator('.picker__title').allTextContents()
+  console.log('connect methods:', JSON.stringify(methods))
+  if (!methods.some((m) => m.includes('Wallet app'))) throw new Error('WalletConnect option missing')
+  if (!methods.some((m) => m.includes('Browser extension'))) throw new Error('Extension option missing')
+
+  await page.locator('.picker', { hasText: 'Wallet app' }).first().click()
+  await page.waitForTimeout(900)
+  await shot('12b-walletconnect')
+
+  await page.getByRole('button', { name: 'Close' }).click()
+  await page.waitForTimeout(400)
   for (const section of ['Security', 'Networks']) {
     await page.locator('.settings-nav__item', { hasText: section }).click()
     await page.waitForTimeout(500)

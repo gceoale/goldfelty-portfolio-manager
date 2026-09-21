@@ -139,8 +139,7 @@ export function Send({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
                 </div>
               }
             >
-              Your transaction is on its way. It will settle in the network&rsquo;s own time — the Home tab updates
-              once it confirms.
+              On its way. Home updates once it confirms.
               <div className="mono" style={{ marginTop: 10, wordBreak: 'break-all', color: 'var(--text-secondary)' }}>
                 {sent.hash}
               </div>
@@ -165,8 +164,7 @@ export function Send({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
                 </Button>
               }
             >
-              Send becomes available once a smart wallet holds a balance. Watch-only wallets never appear here —
-              Goldfelty has no key for them.
+              Nothing to send until a wallet holds something. Watch-only wallets never appear here.
             </EmptyState>
           </Card>
         </div>
@@ -383,7 +381,7 @@ export function Send({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
       <Modal
         open={confirmOpen}
         title="Confirm this transfer"
-        description="Transfers cannot be undone. Check the address one more time."
+        description="This cannot be undone."
         onClose={() => {
           setConfirmOpen(false)
           setPassword('')
@@ -427,8 +425,7 @@ export function Send({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
         </div>
         {quote?.requiresDeployment && (
           <Banner tone="warning" title="Two transactions">
-            This wallet has not been used on {route?.chainName} before, so Goldfelty deploys the account contract
-            first and then sends. You will be charged gas for both.
+            First use on {route?.chainName}: the account is deployed, then the transfer sends. Gas for both.
           </Banner>
         )}
         {settings?.confirmBeforeSend !== false ? (
@@ -438,7 +435,7 @@ export function Send({ onNavigate }: { onNavigate: (tab: string) => void }): JSX
         ) : (
           <Banner tone="warning" title="Password confirmation is off">
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              <IconAlert size={13} /> Anyone at this computer can move funds while the vault is unlocked.
+              <IconAlert size={13} /> Anyone at this computer can move funds while unlocked.
             </span>
           </Banner>
         )}

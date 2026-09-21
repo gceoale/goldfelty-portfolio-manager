@@ -1,0 +1,18 @@
+name = "goldfelty-api"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# api.goldfelty.com. Requires the zone to be on Cloudflare; remove this block
+# to deploy on the workers.dev subdomain instead.
+routes = [
+  { pattern = "api.goldfelty.com", custom_domain = true }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "goldfelty-accounts"
+# Filled in by `npm run db:create` — it prints the id to paste here.
+database_id = "REPLACE_WITH_ID_FROM_db:create"
+
+[observability]
+enabled = true

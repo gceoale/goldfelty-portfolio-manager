@@ -84,7 +84,7 @@ export function Receive({ onNavigate }: { onNavigate: (tab: string) => void }): 
                 </Button>
               }
             >
-              You need at least one connected wallet before Goldfelty can give you an address to receive at.
+              Connect a wallet first.
             </EmptyState>
           </Card>
         </div>
@@ -172,8 +172,7 @@ export function Receive({ onNavigate }: { onNavigate: (tab: string) => void }): 
                 </div>
 
                 <Banner tone="warning" title={`Send only ${symbol} on ${route.chainName}`}>
-                  This address belongs to {route.walletLabel}. Anything sent to it on a different network, or a
-                  token Goldfelty does not track, may be unrecoverable.
+                  {route.walletLabel}. Anything sent on another network may be unrecoverable.
                 </Banner>
 
                 <div className="qr-panel">
@@ -216,9 +215,7 @@ export function Receive({ onNavigate }: { onNavigate: (tab: string) => void }): 
                     <Field hint="">
                       <p className="muted" style={{ fontSize: 12.5, maxWidth: 46 * 8 }}>
                         <IconAlert size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
-                        This account has not been deployed on {route.chainName} yet. Receiving still works — the
-                        address is fixed by its CREATE2 salt — and the contract is deployed the first time you send
-                        from it.
+                        Not deployed on {route.chainName} yet. Receiving works anyway; the contract goes up on your first send.
                       </p>
                     </Field>
                   )}
