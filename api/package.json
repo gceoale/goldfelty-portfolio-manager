@@ -3,14 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Account registration for goldfelty.com",
-  "main": "src/server.js",
+  "description": "Account registration for goldfelty.com, on Cloudflare Workers",
+  "main": "src/worker.js",
   "scripts": {
-    "start": "node src/server.js",
-    "test": "NODE_ENV=test node --test test/*.test.mjs"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create goldfelty-accounts",
+    "db:migrate": "wrangler d1 execute goldfelty-accounts --remote --file=./schema.sql",
+    "db:migrate:local": "wrangler d1 execute goldfelty-accounts --local --file=./schema.sql",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@noble/curves": "^1.7.0",
+    "@noble/hashes": "^1.6.1"
+  },
+  "devDependencies": {
+    "wrangler": "^3.95.0",
     "ethers": "^6.13.4"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

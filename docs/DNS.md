@@ -1,87 +1,96 @@
 # Setting up goldfelty.com
 
-Everything here has to happen at your registrar and your host — I can't touch
-either. Work down the list.
+All of this happens at your registrar and in the Cloudflare dashboard — I can't
+reach either from here. Work down the list.
 
-## 1. The website
+The plan: Cloudflare runs DNS for the zone, the API is a Worker on
+`api.goldfelty.com`, and the site stays on GitHub Pages at the apex.
 
-The landing page lives in `site/` and deploys to GitHub Pages whenever `main`
+## 1. Point the domain at Cloudflare
+
+Add `goldfelty.com` in the Cloudflare dashboard, then change the nameservers at
+your registrar to the two Cloudflare gives you. Propagation is usually minutes
+but can take a day.
+
+This has to happen first. The Worker's custom domain only works on a zone
+Cloudflare controls.
+
+## 2. The website
+
+The landing page is in `site/` and deploys to GitHub Pages whenever `main`
 changes.
 
-**On GitHub:** Settings → Pages → Source: *GitHub Actions*. Then Settings →
-Pages → Custom domain: `goldfelty.com`, and tick *Enforce HTTPS* once the
-certificate is issued (that takes a few minutes after DNS resolves).
+**On GitHub:** Settings → Pages → Source: *GitHub Actions*. Then set the custom
+domain to `goldfelty.com` and tick *Enforce HTTPS* once the certificate issues.
 
-**At your registrar,** for the apex domain:
+**In Cloudflare DNS:**
+
+| Type | Name | Value | Proxy |
+| --- | --- | --- | --- |
+| A | @ | 185.199.108.153 | DNS only |
+| A | @ | 185.199.109.153 | DNS only |
+| A | @ | 185.199.110.153 | DNS only |
+| A | @ | 185.199.111.153 | DNS only |
+| CNAME | www | gceoalexyt-ops.github.io | DNS only |
+
+Leave the proxy **off** (grey cloud) until GitHub has issued its certificate.
+Pages validates over plain DNS, and proxying breaks that. Turn it on afterwards
+if you want Cloudflare in front.
+
+`site/CNAME` contains `goldfelty.com` — that's what tells Pages the domain is
+yours. Don't delete it.
+
+## 3. The API
+
+```sh
+cd api
+npm install
+npm run db:create      # prints a database_id
+# paste that id into wrangler.toml
+npm run db:migrate
+npm run deploy
+```
+
+`wrangler.toml` declares `api.goldfelty.com` as a custom domain, so Cloudflare
+creates the DNS record itself — there's nothing to add by hand. If the zone
+isn't on Cloudflare yet this step fails; go back to step 1.
+
+The desktop app calls `https://api.goldfelty.com/v1`. Until that resolves,
+accounts are created locally and the app says so. Nothing breaks; people just
+don't get a reserved username. Set `GOLDFELTY_API_URL` to test against a
+staging deployment.
+
+## 4. Email
+
+`support@goldfelty.com` needs an inbox provider — Fastmail, Google Workspace,
+Migadu. They'll give you MX records and a DKIM record. Add those, then SPF and
+DMARC yourself:
 
 | Type | Name | Value |
 | --- | --- | --- |
-| A | @ | 185.199.108.153 |
-| A | @ | 185.199.109.153 |
-| A | @ | 185.199.110.153 |
-| A | @ | 185.199.111.153 |
-| AAAA | @ | 2606:50c0:8000::153 |
-| AAAA | @ | 2606:50c0:8001::153 |
-| AAAA | @ | 2606:50c0:8002::153 |
-| AAAA | @ | 2606:50c0:8003::153 |
-| CNAME | www | gceoalexyt-ops.github.io |
-
-`site/CNAME` already contains `goldfelty.com`, which is what tells Pages the
-domain is yours. Don't delete it.
-
-## 2. The API
-
-`api/` needs to run somewhere — Fly, Railway, Render, a small VPS, anything
-that can run a container. Once it has a hostname:
-
-| Type | Name | Value |
-| --- | --- | --- |
-| CNAME | api | whatever your host gives you |
-
-If your host only gives you an IP, use an A record instead.
-
-The app calls `https://api.goldfelty.com/v1` by default. Until that resolves,
-accounts are created locally and the app says so — nothing breaks, people just
-don't get a reserved username. Point `GOLDFELTY_API_URL` elsewhere to test
-against a staging deployment.
-
-Give the container a persistent volume at `/data`, or accounts disappear on
-every restart.
-
-## 3. Email
-
-For `support@goldfelty.com` to work you need an inbox provider — Fastmail,
-Google Workspace, Migadu, whatever. They'll give you MX records. Then add SPF
-and DMARC yourself:
-
-| Type | Name | Value |
-| --- | --- | --- |
-| MX | @ | (from your provider, with their priorities) |
+| MX | @ | from your provider, with their priorities |
 | TXT | @ | `v=spf1 include:<your provider> -all` |
 | TXT | _dmarc | `v=DMARC1; p=quarantine; rua=mailto:postmaster@goldfelty.com` |
 
-Your provider will also hand you a DKIM record, usually a CNAME or TXT on a
-selector like `s1._domainkey`. Add it — without DKIM your mail gets filed as
+MX records are never proxied. DKIM usually arrives as a CNAME on a selector
+like `s1._domainkey` — add it, because without DKIM your mail gets filed as
 spam.
 
-Start DMARC at `p=none` if you want to watch the reports for a week before
+Start DMARC at `p=none` if you want to read the reports for a week before
 enforcing.
 
-## 4. Deep links
+## 5. Deep links
 
-`https://goldfelty.com/wc?uri=…` works as soon as Pages is live — it's a page
-that redirects to `goldfelty://`, so no DNS beyond step 1.
+`https://goldfelty.com/wc?uri=…` works as soon as Pages is live. It's a page
+that redirects to `goldfelty://`, so it needs nothing beyond step 2.
 
-The `goldfelty://` scheme itself is registered by the installer, so it only
-works once someone has installed the app.
-
-If you later want links to open the app without the redirect page, that needs
-Apple's `apple-app-site-association` and Android's `assetlinks.json` served
-from `/.well-known/`. Only worth doing if you ship mobile apps.
+The `goldfelty://` scheme is registered by the installer, so it only works once
+someone has the app.
 
 ## Checking it worked
 
 ```sh
+dig +short NS goldfelty.com
 dig +short goldfelty.com
 dig +short api.goldfelty.com
 dig +short MX goldfelty.com
@@ -89,5 +98,5 @@ curl -s https://api.goldfelty.com/health
 curl -sI https://goldfelty.com | head -1
 ```
 
-DNS changes take anywhere from a minute to a day to propagate, so if something
-looks wrong, wait before assuming it's broken.
+`/health` should return `{"ok":true}`. If DNS looks wrong, give it time before
+assuming something is broken.

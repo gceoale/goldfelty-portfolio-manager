@@ -133,10 +133,10 @@ src/main/     vault, store, RPC, prices, portfolio, transfers, connections
 src/preload/  the named-verb bridge — the renderer's entire API
 src/renderer/ React UI
 src/shared/   types, chains, tokens, deep-link parsing
-api/          account registration for api.goldfelty.com
+api/          account registration — Cloudflare Worker + D1
 site/         goldfelty.com
-docs/DNS.md   domain, API and email setup
-tests/        72 tests over the main-process logic
+docs/DNS.md   Cloudflare, Pages, Worker and email setup
+tests/        72 tests over the main-process logic (api/ has 21 more)
 ```
 
 ## Before real money

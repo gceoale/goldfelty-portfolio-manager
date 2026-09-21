@@ -1,137 +1,171 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer } from 'node:http'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { Wallet } from 'ethers'
+import { handleRequest, statementFor, usernameProblem, MAX_AGE_MS } from '../src/accounts.js'
 
-process.env.NODE_ENV = 'test'
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'gf-api-'))
-
-const { handle } = await import('../src/server.js')
-
-const server = createServer(handle)
-await new Promise((r) => server.listen(0, '127.0.0.1', r))
-const base = `http://127.0.0.1:${server.address().port}`
-
-test.after(() => {
-  server.close()
-  rmSync(process.env.DATA_DIR, { recursive: true, force: true })
-})
-
-function statement({ username, email, address, issuedAt }) {
-  return [
-    'Goldfelty account registration',
-    `username: ${username}`,
-    `email: ${email}`,
-    `address: ${address}`,
-    `issued: ${issuedAt}`
-  ].join('\n')
+/** An in-memory stand-in for D1, unique indexes included. */
+function makeDb() {
+  const byUsername = new Map()
+  const byAddress = new Map()
+  return {
+    async findByUsername(u) { return byUsername.get(u) ?? null },
+    async findByAddress(a) { return byAddress.get(a) ?? null },
+    async insert({ username, email, address }) {
+      if (byUsername.has(username)) throw new Error('UNIQUE constraint failed: accounts.username')
+      const account = { id: `gf_${byUsername.size}`, username, email, address }
+      byUsername.set(username, account)
+      byAddress.set(address, account)
+      return account
+    },
+    size: () => byUsername.size
+  }
 }
 
-async function register(overrides = {}, wallet = Wallet.createRandom()) {
-  const body = {
-    username: `user${Math.random().toString(36).slice(2, 8)}`,
-    email: 'someone@example.com',
-    address: wallet.address,
-    issuedAt: new Date().toISOString(),
-    ...overrides
-  }
-  body.signature = overrides.signature ?? (await wallet.signMessage(statement(body)))
-  const res = await fetch(`${base}/v1/accounts`, {
+async function post(db, body, now = Date.now()) {
+  const request = new Request('https://api.goldfelty.com/v1/accounts', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
   })
-  return { res, json: await res.json(), body, wallet }
+  const res = await handleRequest(db, request, now)
+  return { res, json: await res.json() }
 }
 
-test('registers an account when the signature checks out', async () => {
-  const { res, json, body } = await register()
+async function signed(overrides = {}, wallet = Wallet.createRandom()) {
+  const body = {
+    username: 'alice',
+    email: 'alice@example.com',
+    address: wallet.address,
+    issuedAt: new Date().toISOString(),
+    ...overrides
+  }
+  body.signature = overrides.signature ?? (await wallet.signMessage(statementFor(body)))
+  return { body, wallet }
+}
+
+test('registers when the signature checks out', async () => {
+  const db = makeDb()
+  const { body } = await signed()
+  const { res, json } = await post(db, body)
   assert.equal(res.status, 201)
+  assert.equal(json.username, 'alice')
   assert.match(json.id, /^gf_/)
-  assert.equal(json.username, body.username)
 })
 
-test('rejects a signature from a different key', async () => {
-  const impostor = Wallet.createRandom()
+test('refuses a signature from a different key', async () => {
+  const db = makeDb()
   const victim = Wallet.createRandom()
-  const issuedAt = new Date().toISOString()
-  const body = { username: 'claimed', email: 'a@b.co', address: victim.address, issuedAt }
-  // Signed by the impostor, claiming the victim's address.
-  const signature = await impostor.signMessage(statement(body))
-  const { res, json } = await register({ ...body, signature }, victim)
+  const impostor = Wallet.createRandom()
+  const { body } = await signed({ address: victim.address }, victim)
+  body.signature = await impostor.signMessage(statementFor(body))
+  const { res, json } = await post(db, body)
   assert.equal(res.status, 401)
   assert.match(json.message, /does not match/)
+  assert.equal(db.size(), 0)
 })
 
-test('rejects a signature over different content', async () => {
-  const wallet = Wallet.createRandom()
-  const issuedAt = new Date().toISOString()
-  const signed = { username: 'alice', email: 'a@b.co', address: wallet.address, issuedAt }
-  const signature = await wallet.signMessage(statement(signed))
+test('refuses a signature taken from a different statement', async () => {
+  const db = makeDb()
+  const { body, wallet } = await signed({ username: 'alice' })
   // Same signature, different username: the statement no longer matches.
-  const { res } = await register({ ...signed, username: 'bob', signature }, wallet)
+  const tampered = { ...body, username: 'bob' }
+  tampered.signature = await wallet.signMessage(statementFor(body))
+  const { res } = await post(db, tampered)
   assert.equal(res.status, 401)
 })
 
-test('refuses a stale registration', async () => {
-  const issuedAt = new Date(Date.now() - 20 * 60_000).toISOString()
-  const { res, json } = await register({ issuedAt })
-  assert.equal(res.status, 400)
-  assert.match(json.message, /too old/)
+test('refuses a stale or future-dated registration', async () => {
+  const db = makeDb()
+  const old = await signed({ issuedAt: new Date(Date.now() - MAX_AGE_MS - 60_000).toISOString() })
+  assert.equal((await post(db, old.body)).res.status, 400)
+  const future = await signed({ issuedAt: new Date(Date.now() + 10 * 60_000).toISOString() })
+  assert.equal((await post(db, future.body)).res.status, 400)
 })
 
-test('refuses one dated in the future', async () => {
-  const issuedAt = new Date(Date.now() + 10 * 60_000).toISOString()
-  const { res, json } = await register({ issuedAt })
-  assert.equal(res.status, 400)
-  assert.match(json.message, /future/)
-})
-
-test('refuses a taken username', async () => {
-  const first = await register({ username: 'taken' })
-  assert.equal(first.res.status, 201)
-  const second = await register({ username: 'taken' })
+test('refuses a username somebody else holds', async () => {
+  const db = makeDb()
+  assert.equal((await post(db, (await signed({ username: 'taken' })).body)).res.status, 201)
+  const second = await post(db, (await signed({ username: 'taken' })).body)
   assert.equal(second.res.status, 409)
 })
 
-test('re-registering the same address returns the existing account', async () => {
+test('returns the existing account when an address re-registers', async () => {
+  const db = makeDb()
   const wallet = Wallet.createRandom()
-  const first = await register({ username: 'stable' }, wallet)
-  assert.equal(first.res.status, 201)
-  // The app re-links after being offline; that must not be an error.
-  const again = await register({ username: 'different' }, wallet)
-  assert.equal(again.res.status, 200)
-  assert.equal(again.json.username, 'stable')
+  const first = await signed({ username: 'stable' }, wallet)
+  assert.equal((await post(db, first.body)).res.status, 201)
+
+  // This is what happens every time the app re-links after being offline.
+  const again = await signed({ username: 'somethingelse' }, wallet)
+  const { res, json } = await post(db, again.body)
+  assert.equal(res.status, 200)
+  assert.equal(json.username, 'stable')
+  assert.equal(db.size(), 1)
 })
 
-test('validates usernames and emails', async () => {
-  for (const username of ['ab', '-bad', 'has space', 'UPPER', 'x'.repeat(25)]) {
-    const { res } = await register({ username })
-    assert.equal(res.status, 400, `${username} should be refused`)
+test('lets the unique index settle a simultaneous claim', async () => {
+  const db = makeDb()
+  const a = await signed({ username: 'race' })
+  const b = await signed({ username: 'race' })
+  // Both pass the availability check, then both try to insert.
+  const [first, second] = await Promise.all([post(db, a.body), post(db, b.body)])
+  const statuses = [first.res.status, second.res.status].sort()
+  assert.deepEqual(statuses, [201, 409], 'exactly one should win')
+  assert.equal(db.size(), 1)
+})
+
+test('rejects bad usernames and emails', async () => {
+  const db = makeDb()
+  for (const username of ['ab', '-bad', 'has space', 'UPPER', 'MiXed', 'x'.repeat(25), 'admin', 'support']) {
+    const { body } = await signed({ username })
+    // 400, not 401: these must be refused on their own terms, before the
+    // signature is even considered.
+    assert.equal((await post(db, body)).res.status, 400, `${username} should be refused`)
   }
-  const { res } = await register({ email: 'nope' })
-  assert.equal(res.status, 400)
+  const { body } = await signed({ email: 'nope' })
+  assert.equal((await post(db, body)).res.status, 400)
 })
 
-test('reports username availability', async () => {
-  await register({ username: 'claimedname' })
-  const taken = await (await fetch(`${base}/v1/accounts/username-available?username=claimedname`)).json()
-  assert.equal(taken.available, false)
-  const free = await (await fetch(`${base}/v1/accounts/username-available?username=freename`)).json()
-  assert.equal(free.available, true)
-  const bad = await (await fetch(`${base}/v1/accounts/username-available?username=--`)).json()
-  assert.equal(bad.available, false)
+test('reports availability, including reserved names', async () => {
+  const db = makeDb()
+  await post(db, (await signed({ username: 'claimed' })).body)
+  const ask = async (u) => {
+    const res = await handleRequest(db, new Request(`https://api.goldfelty.com/v1/accounts/username-available?username=${u}`))
+    return res.json()
+  }
+  assert.equal((await ask('claimed')).available, false)
+  assert.equal((await ask('free')).available, true)
+  assert.equal((await ask('admin')).available, false)
+  assert.equal((await ask('--')).available, false)
 })
 
-test('never echoes anything secret back', async () => {
-  const { json } = await register()
+test('returns only an id and a username', async () => {
+  const db = makeDb()
+  const { json } = await post(db, (await signed()).body)
   assert.deepEqual(Object.keys(json).sort(), ['id', 'username'])
 })
 
-test('health check answers', async () => {
-  const res = await fetch(`${base}/health`)
-  assert.equal(res.status, 200)
+test('handles malformed bodies and unknown routes', async () => {
+  const db = makeDb()
+  const bad = await handleRequest(db, new Request('https://api.goldfelty.com/v1/accounts', {
+    method: 'POST', body: 'not json', headers: { 'content-type': 'application/json' }
+  }))
+  assert.equal(bad.status, 400)
+  const missing = await handleRequest(db, new Request('https://api.goldfelty.com/nope'))
+  assert.equal(missing.status, 404)
+  const health = await handleRequest(db, new Request('https://api.goldfelty.com/health'))
+  assert.equal(health.status, 200)
+})
+
+test('answers CORS preflight for the site only', async () => {
+  const db = makeDb()
+  const res = await handleRequest(db, new Request('https://api.goldfelty.com/v1/accounts', { method: 'OPTIONS' }))
+  assert.equal(res.status, 204)
+  assert.equal(res.headers.get('access-control-allow-origin'), 'https://goldfelty.com')
+})
+
+test('username rules are shared, not duplicated', () => {
+  assert.equal(usernameProblem('alice'), null)
+  assert.match(usernameProblem('ab'), /3 to 24/)
+  assert.match(usernameProblem('admin'), /reserved/)
 })
