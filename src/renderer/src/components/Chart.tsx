@@ -8,6 +8,8 @@ interface Props {
   /** Positive periods draw green, negative red — the colour is the headline. */
   positive: boolean
   height?: number
+  /** Drop the gradient and gridlines: a line, a baseline, nothing else. */
+  minimal?: boolean
 }
 
 const PAD = { top: 12, right: 4, bottom: 18, left: 4 }
@@ -17,7 +19,7 @@ const PAD = { top: 12, right: 4, bottom: 18, left: 4 }
  * already in the hero, so the chart's job is shape, direction and a precise
  * read-out on hover.
  */
-export function AreaChart({ data, currency, positive, height = 172 }: Props): JSX.Element {
+export function AreaChart({ data, currency, positive, height = 172, minimal = false }: Props): JSX.Element {
   const ref = useRef<SVGSVGElement | null>(null)
   const [hover, setHover] = useState<number | null>(null)
   const [width, setWidth] = useState(720)
@@ -76,16 +78,15 @@ export function AreaChart({ data, currency, positive, height = 172 }: Props): JS
     return (
       <div
         style={{
-          height,
-          display: 'grid',
-          placeItems: 'center',
-          color: 'var(--text-muted)',
-          fontSize: 12.5,
-          border: '1px dashed var(--border-subtle)',
-          borderRadius: 'var(--radius-md)'
+          display: 'flex',
+          alignItems: 'flex-end',
+          color: 'var(--ink-3)',
+          fontSize: 13,
+          borderBottom: '1px solid var(--rule)',
+          paddingBottom: 12
         }}
       >
-        Growth appears here once the app has a few balance readings to compare.
+        A line appears here once there are a few readings to compare.
       </div>
     )
   }
@@ -135,20 +136,49 @@ export function AreaChart({ data, currency, positive, height = 172 }: Props): JS
           </linearGradient>
         </defs>
 
-        {[0.25, 0.5, 0.75].map((fraction) => (
+        {!minimal &&
+          [0.25, 0.5, 0.75].map((fraction) => (
+            <line
+              key={fraction}
+              x1={PAD.left}
+              x2={width - PAD.right}
+              y1={PAD.top + (height - PAD.top - PAD.bottom) * fraction}
+              y2={PAD.top + (height - PAD.top - PAD.bottom) * fraction}
+              stroke="var(--rule)"
+              strokeDasharray="3 5"
+            />
+          ))}
+
+        {/* One hairline the series sits on, instead of a grid. */}
+        {minimal && (
           <line
-            key={fraction}
             x1={PAD.left}
             x2={width - PAD.right}
-            y1={PAD.top + (height - PAD.top - PAD.bottom) * fraction}
-            y2={PAD.top + (height - PAD.top - PAD.bottom) * fraction}
-            stroke="var(--border-subtle)"
-            strokeDasharray="3 5"
+            y1={height - PAD.bottom}
+            y2={height - PAD.bottom}
+            stroke="var(--rule)"
           />
-        ))}
+        )}
 
-        <path d={measured.area} fill={`url(#${gradientId})`} />
-        <path d={measured.line} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        {!minimal && <path d={measured.area} fill={`url(#${gradientId})`} />}
+        <path
+          d={measured.line}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={minimal ? 1.5 : 2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Where the series ends, which is the only point worth marking. */}
+        {minimal && !active && (
+          <circle
+            cx={measured.coords[measured.coords.length - 1].x}
+            cy={measured.coords[measured.coords.length - 1].y}
+            r={2.5}
+            fill={stroke}
+          />
+        )}
 
         {active && (
           <>

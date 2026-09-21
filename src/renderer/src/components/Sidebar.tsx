@@ -2,7 +2,6 @@ import type { JSX, ReactNode } from 'react'
 import { IconHome, IconLock, IconReceive, IconSend, IconSettings } from './Icons.js'
 import { Avatar, Button } from './ui.js'
 import { useApp } from '../state/app.js'
-import { compactMoney } from '../lib/format.js'
 
 export type TabId = 'home' | 'send' | 'receive' | 'settings'
 
@@ -38,9 +37,8 @@ export const TABS: Array<{ id: TabId; label: string; icon: ReactNode; title: str
 ]
 
 export function Sidebar({ active, onChange }: { active: TabId; onChange: (tab: TabId) => void }): JSX.Element {
-  const { status, wallets, portfolio, settings } = useApp()
+  const { status, wallets } = useApp()
   const activeWallets = wallets.filter((w) => !w.archived).length
-  const currency = settings?.currency ?? 'USD'
 
   return (
     <aside className="sidebar">
@@ -71,15 +69,6 @@ export function Sidebar({ active, onChange }: { active: TabId; onChange: (tab: T
       <div className="sidebar__spacer" />
 
       <div className="sidebar__footer">
-        {portfolio && (
-          <div style={{ padding: '2px 10px 6px' }}>
-            <div className="sidebar__sub">Total value</div>
-            <div style={{ fontSize: 17, fontWeight: 620, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-              {settings?.hideBalances ? '••••••' : compactMoney(portfolio.total, currency)}
-            </div>
-          </div>
-        )}
-
         <button className="account-chip" onClick={() => onChange('settings')}>
           <Avatar name={status?.account?.username ?? 'Goldfelty'} />
           <div style={{ minWidth: 0, flex: 1 }}>
