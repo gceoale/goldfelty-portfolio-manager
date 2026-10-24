@@ -1,62 +1,60 @@
-import { useState, type JSX } from 'react'
-import { Button, Field, PasswordInput } from '../components/ui.js'
-import { IconLock } from '../components/Icons.js'
-import { useApp } from '../state/app.js'
+import { useEffect, useState, type JSX } from 'react'
+import { useApp } from '../state/app.tsx'
+import { Button, TextInput } from '../components/ui.tsx'
+
+const api = window.goldfelty
 
 export function Lock(): JSX.Element {
-  const { refreshStatus, status } = useApp()
-  const [password, setPassword] = useState('')
+  const { status, refreshStatus } = useApp()
+  const [pw, setPw] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  const retryAt = status?.unlockRetryAt ?? null
+  const waiting = retryAt !== null && retryAt > now
+
+  useEffect(() => {
+    if (!retryAt) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [retryAt])
 
   const unlock = async (): Promise<void> => {
-    if (!password) return
     setBusy(true)
     setError(null)
-    const result = await window.goldfelty.vault.unlock(password)
+    const r = await api.vault.unlock(pw)
     setBusy(false)
-    if (!result.ok) {
-      setError(result.code === 'WRONG_PASSWORD' ? 'That password is not right.' : result.error)
-      setPassword('')
+    if (r.ok) {
+      setPw('')
+      await refreshStatus()
       return
     }
-    setPassword('')
+    setError(r.code === 'CORRUPT_DATA' ? `${r.error} Your wallets and funds are unaffected.` : r.error)
     await refreshStatus()
   }
 
   return (
-    <div className="gate">
-      <div className="gate__inner" style={{ maxWidth: 400 }}>
-        <div className="gate__brand" style={{ justifyContent: 'center' }}>
-          <span className="sidebar__mark gate__brand-mark">G</span>
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <h1 className="gate__title" style={{ fontSize: 21 }}>
-            {status?.account ? `Welcome back, ${status.account.username}` : 'Welcome back'}
-          </h1>
-          <p className="gate__lede" style={{ marginTop: 6, fontSize: 13.5 }}>
-            Enter your password to unlock your vault.
-          </p>
-        </div>
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Field label="Password" id="unlock-pw" error={error}>
-            <PasswordInput id="unlock-pw" value={password} onChange={setPassword} autoFocus onEnter={() => void unlock()} />
-          </Field>
-          <Button
-            variant="primary"
-            block
-            busy={busy}
-            disabled={!password}
-            icon={<IconLock size={15} />}
-            onClick={() => void unlock()}
-          >
-            Unlock
-          </Button>
-        </div>
-        <p className="muted" style={{ fontSize: 12, textAlign: 'center' }}>
-          Forgotten your password? Reinstall Goldfelty and restore from your 24-word recovery phrase.
-        </p>
-      </div>
+    <div className="lock">
+      <div className="setup-drag" />
+      <form
+        className="lock-panel"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (pw && !waiting) void unlock()
+        }}
+      >
+        <span className="brand-mark large">G</span>
+        <h1>{status?.greetingName ? `Welcome back, ${status.greetingName}` : 'Goldfelty is locked'}</h1>
+        <TextInput type="password" placeholder="Password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} aria-label="Password" />
+        {waiting ? (
+          <div className="field-error">Too many wrong passwords. Try again in {Math.ceil((retryAt! - now) / 1000)} s.</div>
+        ) : error ? (
+          <div className="field-error">{error}</div>
+        ) : null}
+        <Button type="submit" variant="primary" busy={busy} disabled={!pw || waiting}>
+          Unlock
+        </Button>
+      </form>
     </div>
   )
 }

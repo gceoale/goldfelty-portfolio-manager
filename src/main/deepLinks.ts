@@ -6,13 +6,11 @@ export { PROTOCOL, parseDeepLink, linkFromArgv, type DeepLink }
 /**
  * Deep links into the desktop app.
  *
- * Two shapes, both ending up in the same place:
- *   goldfelty://wc?uri=wc:…      a wallet or page handing us a pairing URI
- *   https://goldfelty.com/wc?uri=…   the same thing, for clients that will
- *                                    only follow https
+ * Two shapes, both of which only bring the window forward:
+ *   goldfelty://
+ *   https://goldfelty.com/open
  *
- * Without this a user has to copy a WalletConnect URI by hand, which is the
- * kind of step people give up on.
+ * Nothing in a link is acted on beyond that. See shared/deepLink.ts.
  */
 
 type Handler = (link: DeepLink) => void

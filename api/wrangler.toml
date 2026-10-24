@@ -2,16 +2,20 @@ name = "goldfelty-api"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
 
-# api.goldfelty.com. Requires the zone to be on Cloudflare; remove this block
-# to deploy on the workers.dev subdomain instead.
+# Served only at api.goldfelty.com. The zone must be on Cloudflare, and there
+# must be no existing DNS record named "api" (Cloudflare creates it).
 routes = [
   { pattern = "api.goldfelty.com", custom_domain = true }
 ]
+# No second address on workers.dev: one public endpoint, one place to watch.
+workers_dev = false
+preview_urls = false
 
 [[d1_databases]]
 binding = "DB"
 database_name = "goldfelty-accounts"
-# Filled in by `npm run db:create` — it prints the id to paste here.
+# The deploy workflow fills this in. For a manual deploy, run
+# `npm run db:create` and paste the id it prints.
 database_id = "REPLACE_WITH_ID_FROM_db:create"
 
 [observability]

@@ -1,94 +1,93 @@
-import type { JSX, ReactNode } from 'react'
-import { IconHome, IconLock, IconReceive, IconSend, IconSettings } from './Icons.js'
-import { Avatar, Button } from './ui.js'
-import { useApp } from '../state/app.js'
+import type { JSX } from 'react'
+import { useApp, type Page } from '../state/app.tsx'
+import { ActivityIcon, LockIcon, OverviewIcon, PlusIcon, ReceiveIcon, SendIcon, SettingsIcon } from './Icons.tsx'
+import { StatusDot, WalletGlyph } from './ui.tsx'
+import { compactMoney } from '../lib/format.ts'
 
-export type TabId = 'home' | 'send' | 'receive' | 'settings'
-
-export const TABS: Array<{ id: TabId; label: string; icon: ReactNode; title: string; subtitle: string }> = [
-  {
-    id: 'home',
-    label: 'Home',
-    icon: <IconHome size={17} />,
-    title: 'Home',
-    subtitle: 'Your portfolio across every connected wallet'
-  },
-  {
-    id: 'send',
-    label: 'Send',
-    icon: <IconSend size={17} />,
-    title: 'Send',
-    subtitle: 'Move tokens out of any wallet you control'
-  },
-  {
-    id: 'receive',
-    label: 'Receive',
-    icon: <IconReceive size={17} />,
-    title: 'Receive',
-    subtitle: 'Get an address for the wallet of your choice'
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: <IconSettings size={17} />,
-    title: 'Settings',
-    subtitle: 'Wallets, security, networks and your account'
-  }
+const NAV: Array<{ page: Page; label: string; icon: (p: { size?: number }) => JSX.Element; key: string }> = [
+  { page: { name: 'overview' }, label: 'Overview', icon: OverviewIcon, key: '1' },
+  { page: { name: 'send' }, label: 'Send', icon: SendIcon, key: '2' },
+  { page: { name: 'receive' }, label: 'Receive', icon: ReceiveIcon, key: '3' },
+  { page: { name: 'activity' }, label: 'Activity', icon: ActivityIcon, key: '4' }
 ]
 
-export function Sidebar({ active, onChange }: { active: TabId; onChange: (tab: TabId) => void }): JSX.Element {
-  const { status, wallets } = useApp()
-  const activeWallets = wallets.filter((w) => !w.archived).length
+export const NAV_PAGES = NAV.map((n) => n.page)
+
+/** A source list: where you are, then every wallet you've connected. */
+export function Sidebar(): JSX.Element {
+  const { page, go, wallets, connections, portfolio, settings, status, openConnect, run } = useApp()
+  const currency = settings?.currency ?? 'USD'
+  const byWallet = new Map<string, number>()
+  for (const b of portfolio?.balances ?? []) byWallet.set(b.walletId, (byWallet.get(b.walletId) ?? 0) + b.value)
+  const active = new Map(connections.map((c) => [c.id, c.active]))
+  const visible = wallets.filter((w) => !w.archived)
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar__brand">
-        <span className="sidebar__mark">G</span>
-        <div>
-          <div className="sidebar__name">Goldfelty</div>
-          <div className="sidebar__sub">Portfolio Manager</div>
-        </div>
-      </div>
+    <nav className="sidebar" aria-label="Goldfelty">
+      <div className="sidebar-drag" />
+      <ul className="source-list">
+        {NAV.map((item) => {
+          const Icon = item.icon
+          const selected = page.name === item.page.name
+          return (
+            <li key={item.label}>
+              <button type="button" className={selected ? 'selected' : ''} aria-current={selected ? 'page' : undefined} onClick={() => go(item.page)}>
+                <Icon />
+                <span>{item.label}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
 
-      <nav className="sidebar__nav" aria-label="Main">
-        <div className="sidebar__label">Wallet</div>
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            className={`navitem ${active === tab.id ? 'navitem--active' : ''}`}
-            aria-current={active === tab.id ? 'page' : undefined}
-            onClick={() => onChange(tab.id)}
-          >
-            <span className="navitem__icon">{tab.icon}</span>
-            {tab.label}
-            {tab.id === 'settings' && activeWallets > 0 && <span className="navitem__badge">{activeWallets}</span>}
-          </button>
-        ))}
-      </nav>
-
-      <div className="sidebar__spacer" />
-
-      <div className="sidebar__footer">
-        <button className="account-chip" onClick={() => onChange('settings')}>
-          <Avatar name={status?.account?.username ?? 'Goldfelty'} />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="account-chip__name">{status?.account?.username ?? 'Not signed in'}</div>
-            <div className="account-chip__meta">
-              {status?.account?.linked ? 'goldfelty.com' : 'Local account'}
-            </div>
-          </div>
+      <div className="source-heading">
+        <span>Wallets</span>
+        <button type="button" className="icon-btn" aria-label="Connect a wallet" title="Connect a wallet" onClick={() => openConnect(true)}>
+          <PlusIcon size={14} />
         </button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          block
-          icon={<IconLock size={14} />}
-          onClick={() => void window.goldfelty.vault.lock()}
-        >
-          Lock vault
-        </Button>
       </div>
-    </aside>
+      <ul className="source-list wallets">
+        {visible.length === 0 ? (
+          <li className="source-empty">
+            <button type="button" className="link" onClick={() => openConnect(true)}>
+              Connect a wallet
+            </button>
+          </li>
+        ) : null}
+        {visible.map((w) => {
+          const selected = page.name === 'wallet' && page.id === w.id
+          const reachable = !!w.connectionId && active.get(w.connectionId) === true
+          const value = byWallet.get(w.id) ?? 0
+          return (
+            <li key={w.id}>
+              <button type="button" className={selected ? 'selected' : ''} onClick={() => go({ name: 'wallet', id: w.id })}>
+                <WalletGlyph name={w.providerName ?? w.label} color={w.color} size={16} />
+                <span className="wallet-name">{w.label}</span>
+                {w.kind === 'readonly' ? (
+                  <span className="source-meta">Read-only</span>
+                ) : (
+                  <>
+                    <span className="source-meta">{settings?.hideBalances ? '' : compactMoney(value, currency)}</span>
+                    <StatusDot on={reachable} label={reachable ? 'Reachable' : 'Not reachable right now'} />
+                  </>
+                )}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="sidebar-foot">
+        <button type="button" className={page.name === 'settings' ? 'selected' : ''} onClick={() => go({ name: 'settings' })}>
+          <SettingsIcon />
+          <span>Settings</span>
+        </button>
+        <button type="button" title="Lock (Ctrl/Cmd+L)" onClick={() => void run(window.goldfelty.vault.lock())}>
+          <LockIcon />
+          <span>Lock</span>
+        </button>
+        {status?.account ? <div className="sidebar-user">{status.account.username}</div> : null}
+      </div>
+    </nav>
   )
 }

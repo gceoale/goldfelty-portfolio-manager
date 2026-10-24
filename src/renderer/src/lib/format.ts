@@ -104,3 +104,18 @@ export function contrastText(hex: string): string {
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
   return luminance > 0.62 ? '#14161c' : '#ffffff'
 }
+
+/** An address in groups of four, which is how people actually compare them. */
+export function groupedAddress(address: string): string[] {
+  const body = address.startsWith('0x') ? address.slice(2) : address
+  const groups = ['0x']
+  for (let i = 0; i < body.length; i += 4) groups.push(body.slice(i, i + 4))
+  return groups
+}
+
+export function shortDate(timestamp: number, range: string): string {
+  const d = new Date(timestamp)
+  if (range === '24h') return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (range === '1y' || range === 'all') return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}

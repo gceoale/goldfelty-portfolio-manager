@@ -1,8 +1,8 @@
-import { formatUnits, zeroPadValue } from 'ethers'
+import { formatUnits } from 'ethers'
 import type { Store } from './store.ts'
 import { fetchPrices } from './prices.ts'
 import { rpcBatch } from './rpc.ts'
-import { erc20Interface } from './smartAccount.ts'
+import { erc20Interface } from './erc20.ts'
 import { CHAIN_BY_ID, TOKENS, getChain } from '../shared/chains.ts'
 import type {
   AssetHolding,
@@ -60,13 +60,12 @@ export async function loadPortfolio(store: Store, range: HistoryRange = '24h'): 
   const chainIds = settings.enabledChains.filter((id) => CHAIN_BY_ID.has(id))
 
   const balances: Balance[] = []
-  const deployed = new Map<string, Set<number>>()
   let degraded = wallets.length > 0 && chainIds.length === 0
 
   const perChain = await Promise.all(
     chainIds.map(async (chainId) => {
       const relevant = wallets.filter((w) => w.chainIds.includes(chainId))
-      if (relevant.length === 0) return { chainId, planned: [], results: [], codeResults: [], failed: false }
+      if (relevant.length === 0) return { chainId, planned: [], results: [], failed: false }
 
       const planned: PlannedCall[] = []
       for (const wallet of relevant) {
@@ -86,24 +85,11 @@ export async function loadPortfolio(store: Store, range: HistoryRange = '24h'): 
           )
         }
       }
-      // Tack the deployment probes onto the same round trip.
-      const codeCalls = relevant.map((w) => ({ method: 'eth_getCode', params: [w.address, 'latest'] }))
-
       try {
-        const results = await rpcBatch(
-          chainId,
-          [...planned.map((p) => ({ method: p.method, params: p.params })), ...codeCalls],
-          settings
-        )
-        return {
-          chainId,
-          planned,
-          results: results.slice(0, planned.length),
-          codeResults: relevant.map((w, i) => ({ walletId: w.id, code: results[planned.length + i] })),
-          failed: false
-        }
+        const results = await rpcBatch(chainId, planned.map((p) => ({ method: p.method, params: p.params })), settings)
+        return { chainId, planned, results, failed: false }
       } catch {
-        return { chainId, planned, results: [], codeResults: [], failed: true }
+        return { chainId, planned, results: [], failed: true }
       }
     })
   )
@@ -123,9 +109,7 @@ export async function loadPortfolio(store: Store, range: HistoryRange = '24h'): 
         const cached = store.cachedBalance(walletId, token.key)
         raw = cached?.raw ?? '0'
         stale = true
-        if (!chain.failed && !cached) degraded = degraded || false
       }
-      if (raw === '0' && stale && !chain.failed) continue
       if (raw === '0') continue
       balances.push({
         walletId,
@@ -137,22 +121,6 @@ export async function loadPortfolio(store: Store, range: HistoryRange = '24h'): 
         value: 0,
         stale
       })
-    }
-    for (const entry of chain.codeResults) {
-      if (!entry.code) continue
-      const set = deployed.get(entry.walletId) ?? new Set<number>()
-      if (entry.code !== '0x' && entry.code.length > 2) set.add(chain.chainId)
-      deployed.set(entry.walletId, set)
-    }
-  }
-
-  // Record on-chain deployment state so Send can warn about first use.
-  for (const [walletId, chains] of deployed) {
-    const wallet = store.wallet(walletId)
-    if (!wallet) continue
-    const next = [...chains].sort((a, b) => a - b)
-    if (next.join(',') !== [...wallet.deployedOn].sort((a, b) => a - b).join(',')) {
-      store.updateWallet(walletId, { deployedOn: next })
     }
   }
 
@@ -267,9 +235,4 @@ export function sliceHistory(history: PortfolioSnapshot[], range: HistoryRange):
   // Always give the chart a left-hand anchor so short ranges still draw a line.
   if (sliced.length < 2 && history.length >= 2) return history.slice(-2)
   return sliced
-}
-
-/** Pad an address to a 32-byte word — used when hand-building calldata. */
-export function word(address: string): string {
-  return zeroPadValue(address, 32)
 }

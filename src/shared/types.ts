@@ -1,51 +1,91 @@
 /**
  * Types shared between the main process, the preload bridge and the renderer.
- * Nothing in here may contain secret material — every value described below
- * is safe to hand to the renderer process.
+ * Nothing in here carries secret material: Goldfelty holds no wallet keys, and
+ * the only secret it has (the key that encrypts local data) never leaves the
+ * main process.
  */
 
 /**
- * How a wallet got into the app.
+ * How a wallet reaches the app.
  *
- * - `walletconnect` / `extension` are wallets the user already owns, reached
- *   through their own app. Goldfelty never holds their keys and asks them to
- *   sign every transaction.
- * - `smart` is a contract account this app derived from its own seed.
- * - `watch` is an address tracked without any ability to spend.
+ * - `browser`: an extension in the user's browser (MetaMask, Rabby, ...),
+ *   reached through the local bridge page.
+ * - `frame`: the Frame desktop app, over its local WebSocket.
+ * - `walletconnect`: a phone wallet, over the WalletConnect relay.
+ * - `readonly`: an address carried over from an earlier version that nothing
+ *   can sign for. Shown so balances are not hidden, never offered as a route.
  */
-export type WalletKind = 'smart' | 'watch' | 'walletconnect' | 'extension'
+export type WalletKind = 'browser' | 'frame' | 'walletconnect' | 'readonly'
 
-/** True for wallets whose keys live in somebody else's app. */
-export function isExternal(kind: WalletKind): boolean {
-  return kind === 'walletconnect' || kind === 'extension'
+export function canSign(kind: WalletKind): boolean {
+  return kind !== 'readonly'
 }
 
-/** A connected wallet. Smart wallets are contract accounts owned by a derived signer. */
+/** One account the user has connected. A wallet app can expose several. */
 export interface Wallet {
   id: string
   label: string
   kind: WalletKind
-  /** Smart-contract account address (identical on every chain — CREATE2). */
   address: string
-  /** EOA that owns the contract account. `null` for watch-only wallets. */
-  ownerAddress: string | null
-  /** BIP-44 index the owner key was derived at. `null` for watch-only wallets. */
-  derivationIndex: number | null
-  /** CREATE2 salt used to pin the account address. */
-  salt: string
-  /** Chains this wallet is connected on. */
+  /** The connection that can sign for this address, if it is still around. */
+  connectionId: string | null
+  /** The wallet app holding the key, e.g. "MetaMask". */
+  providerName: string | null
+  /** Registry id or EIP-6963 rdns, used to pick an icon and a colour. */
+  providerId: string | null
   chainIds: number[]
-  /** Chains where the account contract has actually been deployed on-chain. */
-  deployedOn: number[]
-  /** Token keys this wallet holds or has been enabled for, beyond chain natives. */
   enabledTokens: string[]
   color: string
   createdAt: number
   archived: boolean
-  /** For external wallets: the connection that can sign for this address. */
-  connectionId: string | null
-  /** Name of the wallet app holding the keys, e.g. "MetaMask". */
-  providerName: string | null
+  /** Shown beside read-only wallets to say why they cannot send. */
+  note: string | null
+}
+
+/** A live or remembered link to a wallet application. */
+export interface WalletConnection {
+  id: string
+  kind: 'browser' | 'frame' | 'walletconnect'
+  name: string
+  /** Registry id, or the EIP-6963 rdns for wallets not in the registry. */
+  providerId: string
+  /** The EIP-6963 rdns a browser wallet announced, which routes its requests. */
+  rdns: string | null
+  /** Data URI supplied by the wallet itself through EIP-6963. */
+  icon: string | null
+  accounts: string[]
+  chainIds: number[]
+  connectedAt: number
+  /**
+   * Whether the app can reach the wallet right now. A browser connection is
+   * active while a Goldfelty tab is open in a browser that has the extension;
+   * Frame while Frame is running; WalletConnect while the session lives.
+   */
+  active: boolean
+  /** WalletConnect session topic. */
+  topic: string | null
+}
+
+/** A wallet the bridge page has seen announce itself in the user's browser. */
+export interface DetectedWallet {
+  providerId: string
+  rdns: string
+  name: string
+  icon: string | null
+}
+
+/** Where a connection attempt has got to, for the connect sheet. */
+export type ConnectStage =
+  | { stage: 'opening-browser'; wallet: string }
+  | { stage: 'waiting-for-tab'; wallet: string }
+  | { stage: 'approve-in-wallet'; wallet: string }
+
+export interface BridgeStatus {
+  running: boolean
+  url: string | null
+  /** Browser tabs currently holding the bridge open. */
+  pages: number
+  detected: DetectedWallet[]
 }
 
 export interface Chain {
@@ -71,7 +111,6 @@ export interface TokenDef {
   symbol: string
   name: string
   decimals: number
-  /** Identifier used by the price provider. */
   priceId: string | null
   color: string
 }
@@ -81,13 +120,11 @@ export interface Balance {
   tokenKey: string
   chainId: number
   symbol: string
-  /** Base-unit amount as a decimal string (wei-like). */
+  /** Base-unit amount as a decimal string. */
   raw: string
-  /** Human-readable amount. */
   amount: number
-  /** Fiat value at the time of the snapshot. */
   value: number
-  /** True when the figure came from cache rather than a live RPC call. */
+  /** True when the figure came from cache rather than a live read. */
   stale: boolean
 }
 
@@ -101,7 +138,6 @@ export interface AssetHolding {
   priceId: string | null
   price: number
   change24h: number
-  /** Per-wallet, per-chain breakdown — drives the routing choices in Send/Receive. */
   sources: Array<{
     walletId: string
     walletLabel: string
@@ -118,21 +154,17 @@ export interface AssetHolding {
 export interface PortfolioSnapshot {
   at: number
   total: number
-  /** Per-wallet totals at this instant. */
   byWallet: Record<string, number>
 }
 
 export interface Portfolio {
   total: number
-  /** Absolute change over the selected window. */
   change: number
-  /** Percentage change over the selected window. */
   changePct: number
   holdings: AssetHolding[]
   balances: Balance[]
   history: PortfolioSnapshot[]
   updatedAt: number
-  /** True when at least one balance could not be refreshed from the network. */
   degraded: boolean
 }
 
@@ -141,13 +173,12 @@ export type HistoryRange = '24h' | '7d' | '30d' | '1y' | 'all'
 export interface Account {
   username: string
   email: string
-  /** Goldfelty account id returned at registration. */
   goldfeltyId: string
   createdAt: number
-  /** Set once the user has confirmed they stored the recovery material. */
-  backedUp: boolean
-  /** Whether the account was linked to goldfelty.com or created offline. */
+  /** Whether goldfelty.com has a record of this account. */
   linked: boolean
+  /** The address whose signature proved the account, once linked. */
+  address: string | null
 }
 
 export interface Settings {
@@ -155,32 +186,44 @@ export interface Settings {
   currency: 'USD' | 'EUR' | 'GBP' | 'JPY' | 'AUD' | 'CAD'
   autoLockMinutes: number
   hideBalances: boolean
-  confirmBeforeSend: boolean
   refreshIntervalSeconds: number
   priceProviderUrl: string
   customRpc: Record<number, string>
   enabledChains: number[]
-  telemetry: boolean
-  /** Free project ID from cloud.reown.com. WalletConnect does nothing without it. */
+  /** Overrides the project ID shipped with the build. */
   walletConnectProjectId: string
+  /**
+   * Send the portfolio total (one number, its currency and the wallet count)
+   * to goldfelty.com. Off unless the user turns it on.
+   */
+  shareTotals: boolean
 }
 
 export interface AppStatus {
+  /** A vault exists on this computer. */
   initialized: boolean
+  /** Setup finished: a password, and at least the chance to connect a wallet. */
+  onboarded: boolean
   locked: boolean
+  /** When failed unlocks have triggered a wait, the time it ends. */
+  unlockRetryAt: number | null
+  /** Only populated while unlocked. */
   account: Account | null
+  /** Shown on the lock screen, so it lives outside the encrypted store. */
+  greetingName: string | null
   walletCount: number
   version: string
   platform: string
   arch: string
+  /** Set once after upgrading from a version that created wallets. */
+  upgradeNotice: UpgradeNotice | null
 }
 
-/** Recovery material. Returned exactly once, during onboarding, then destroyed. */
-export interface RecoveryMaterial {
-  mnemonic: string
-  privateKey: string
-  ownerAddress: string
-  derivationPath: string
+export interface UpgradeNotice {
+  /** Addresses that version created, now kept read-only. */
+  createdAddresses: string[]
+  /** Where the old encrypted vault was moved to. */
+  backupPath: string
 }
 
 export interface SendQuote {
@@ -190,17 +233,26 @@ export interface SendQuote {
   chainName: string
   walletId: string
   walletLabel: string
+  providerName: string
   from: string
   to: string
   amount: number
-  /** Estimated network fee in the chain's native asset. */
   networkFee: number
   networkFeeSymbol: string
   networkFeeValue: number
   totalValue: number
-  /** Populated when the contract account still needs deploying on this chain. */
-  requiresDeployment: boolean
+  /** Goldfelty's fee, when one applies. Shown before anything is sent. */
+  fee: QuotedFee | null
   warnings: string[]
+}
+
+export interface QuotedFee {
+  /** Basis points: 50 is 0.5%. Sent back with the transfer to pin the rate. */
+  bps: number
+  amount: number
+  symbol: string
+  value: number
+  recipient: string
 }
 
 export interface SendResult {
@@ -208,6 +260,8 @@ export interface SendResult {
   explorerUrl: string
   chainId: number
   submittedAt: number
+  /** What happened to the fee transaction, when there was one. */
+  fee: { status: 'sent'; hash: string; explorerUrl: string } | { status: 'declined' | 'failed'; message: string } | null
 }
 
 export interface TransferRecord {
@@ -222,9 +276,14 @@ export interface TransferRecord {
   hash: string
   at: number
   status: 'pending' | 'confirmed' | 'failed'
+  /** A Goldfelty fee payment rather than a transfer the user addressed. */
+  kind?: 'transfer' | 'fee'
+  /**
+   * Set when what the chain recorded differs from what Goldfelty asked the
+   * wallet to send, such as a different recipient or amount.
+   */
+  warning?: string | null
 }
-
-export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
 
 /** A wallet + chain pair a token can be sent from or received into. */
 export interface RouteOption {
@@ -232,6 +291,8 @@ export interface RouteOption {
   walletLabel: string
   walletColor: string
   walletKind: WalletKind
+  providerName: string | null
+  providerId: string | null
   chainId: number
   chainName: string
   chainColor: string
@@ -239,10 +300,9 @@ export interface RouteOption {
   address: string
   amount: number
   value: number
-  /** False when this route cannot cover the requested amount. */
   sufficient: boolean
-  /** True when the account contract is not yet deployed on this chain. */
-  requiresDeployment: boolean
+  /** False when the wallet app cannot be reached right now. */
+  reachable: boolean
 }
 
 export interface SendableAsset {
@@ -262,30 +322,16 @@ export interface ReceivableAsset {
   wallets: number
 }
 
-
-/** A live link to a wallet application the user controls. */
-export interface WalletConnection {
-  id: string
-  kind: 'walletconnect' | 'extension'
-  /** The wallet app's own name, as it reports it. */
-  name: string
-  icon: string | null
-  /** Addresses this connection can sign for. */
-  accounts: string[]
-  /** Chains the wallet agreed to operate on. */
-  chainIds: number[]
-  connectedAt: number
-  /** False once the wallet app disconnects or the session expires. */
-  active: boolean
-  /** WalletConnect session topic; null for the extension bridge. */
-  topic: string | null
+export interface AccountApiStatus {
+  /** Whether api.goldfelty.com answered its health check just now. */
+  reachable: boolean
+  url: string
 }
 
-/** A pending connection the user still has to approve in their wallet. */
 export interface PendingConnection {
-  /** WalletConnect pairing URI, for the QR code and deep links. */
+  /** WalletConnect pairing URI. */
   uri: string
-  /** Where to point a browser for the extension bridge. */
-  bridgeUrl?: string
   expiresAt: number
 }
+
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }

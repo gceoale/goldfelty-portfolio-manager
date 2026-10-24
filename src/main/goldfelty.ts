@@ -1,57 +1,107 @@
 import { randomUUID } from 'node:crypto'
-import type { Vault } from './vault.ts'
-import type { Account } from '../shared/types.ts'
+import { getAddress } from 'ethers'
+import type { Account, AccountApiStatus } from '../shared/types.ts'
 
 /**
- * Client for goldfelty.com account linking.
+ * The goldfelty.com account.
  *
- * What is sent: the chosen username, the email address, and the owner address
- * with a signature proving the user controls it. What is never sent, under any
- * circumstance: the password, the seed phrase, or any private key. Registration
- * is proof-of-key, not proof-of-password.
+ * Signing up sends three things: a username, an email address, and a
+ * signature from one of the user's own wallets proving they control an
+ * address. The wallet shows the exact text before signing. The password and
+ * keys are never sent. Balances are sent only if the user turns on sharing,
+ * and then only the portfolio total, its currency and the wallet count.
+ *
+ * The account is optional. If api.goldfelty.com cannot be reached, the
+ * account is kept on this computer and linked later from Settings.
  */
-export const GOLDFELTY_API = process.env.GOLDFELTY_API_URL ?? 'https://api.goldfelty.com/v1'
-const TIMEOUT_MS = 10_000
 
-export const USERNAME_RULES = {
-  min: 3,
-  max: 24,
-  pattern: /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/
+export const GOLDFELTY_API = (process.env.GOLDFELTY_API_URL ?? 'https://api.goldfelty.com/v1').replace(/\/$/, '')
+const TIMEOUT_MS = 10_000
+const HEALTH_TIMEOUT_MS = 4_000
+/** Responses larger than this are not from our API. */
+const MAX_RESPONSE = 16_384
+
+export const USERNAME_RULES = { min: 3, max: 24, pattern: /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/ }
+
+export function normaliseUsername(username: string): string {
+  return String(username ?? '').trim().toLowerCase()
+}
+
+export function normaliseEmail(email: string): string {
+  return String(email ?? '').trim().toLowerCase()
 }
 
 export function validateUsername(username: string): string | null {
-  const value = username.trim().toLowerCase()
+  const value = normaliseUsername(username)
   if (value.length < USERNAME_RULES.min) return `Usernames need at least ${USERNAME_RULES.min} characters.`
   if (value.length > USERNAME_RULES.max) return `Usernames can be at most ${USERNAME_RULES.max} characters.`
-  if (!USERNAME_RULES.pattern.test(value)) {
-    return 'Use lowercase letters, numbers, hyphens and underscores only.'
-  }
+  if (!USERNAME_RULES.pattern.test(value)) return 'Use lowercase letters, numbers, hyphens and underscores.'
   return null
 }
 
 export function validateEmail(email: string): string | null {
-  const value = email.trim()
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return 'Enter a valid email address.'
+  const value = normaliseEmail(email)
+  if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return 'Enter a valid email address.'
   return null
 }
 
-async function call<T>(path: string, init: RequestInit): Promise<T> {
+/** The service could not be reached at all. The account can stay local. */
+export class ApiUnreachableError extends Error {
+  code = 'API_UNREACHABLE'
+}
+
+/** The service answered and said no. The user has something to fix. */
+export class ApiRefusedError extends Error {
+  readonly status: number
+  readonly code: string
+  constructor(message: string, status: number, code = 'API_REFUSED') {
+    super(message)
+    this.status = status
+    this.code = code
+  }
+}
+
+async function call<T>(path: string, init: RequestInit = {}, timeoutMs = TIMEOUT_MS): Promise<T> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let response: Response
   try {
-    const response = await fetch(`${GOLDFELTY_API}${path}`, {
+    response = await fetch(`${GOLDFELTY_API}${path}`, {
       ...init,
-      headers: { 'content-type': 'application/json', accept: 'application/json', ...(init.headers ?? {}) },
+      // Never follow a redirect off our own API with a signed body.
+      redirect: 'error',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
       signal: controller.signal
     })
-    const text = await response.text()
-    const body = text ? (JSON.parse(text) as Record<string, unknown>) : {}
-    if (!response.ok) {
-      throw new Error((body.message as string) ?? `${response.status} ${response.statusText}`)
-    }
-    return body as T
+  } catch (error) {
+    throw new ApiUnreachableError(`goldfelty.com couldn’t be reached (${(error as Error).message}).`)
   } finally {
     clearTimeout(timer)
+  }
+
+  const text = await response.text()
+  if (text.length > MAX_RESPONSE) throw new ApiUnreachableError('goldfelty.com sent an unexpected response.')
+  let body: Record<string, unknown> = {}
+  try {
+    body = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+  } catch {
+    // An HTML error page from a proxy or a parked domain: the API is not there.
+    throw new ApiUnreachableError('goldfelty.com isn’t answering account requests right now.')
+  }
+  if (response.status >= 500) throw new ApiUnreachableError('goldfelty.com had a problem. Try again later.')
+  if (!response.ok) {
+    const message = typeof body.message === 'string' ? body.message.slice(0, 200) : `Request failed (${response.status}).`
+    throw new ApiRefusedError(message, response.status)
+  }
+  return body as T
+}
+
+export async function apiStatus(): Promise<AccountApiStatus> {
+  try {
+    const body = await call<{ ok?: boolean }>('/health', { method: 'GET' }, HEALTH_TIMEOUT_MS)
+    return { reachable: body.ok === true, url: GOLDFELTY_API }
+  } catch {
+    return { reachable: false, url: GOLDFELTY_API }
   }
 }
 
@@ -67,83 +117,152 @@ export async function checkUsername(username: string): Promise<UsernameCheck> {
   if (problem) return { available: false, offline: false, reason: problem }
   try {
     const body = await call<{ available: boolean; reason?: string }>(
-      `/accounts/username-available?username=${encodeURIComponent(username.trim().toLowerCase())}`,
-      { method: 'GET' }
+      `/accounts/username-available?username=${encodeURIComponent(normaliseUsername(username))}`,
+      { method: 'GET' },
+      HEALTH_TIMEOUT_MS
     )
-    return { available: body.available, offline: false, reason: body.reason }
-  } catch {
-    // The name is claimed for real at registration time; an offline check must
-    // not block onboarding.
+    return { available: body.available === true, offline: false, reason: typeof body.reason === 'string' ? body.reason : undefined }
+  } catch (error) {
+    if (error instanceof ApiRefusedError) return { available: false, offline: false, reason: error.message }
     return { available: true, offline: true }
   }
 }
 
+/** Exactly what the wallet is asked to sign. The API rebuilds and checks it. */
+export function registrationStatement(input: { username: string; email: string; address: string; issuedAt: string }): string {
+  return [
+    'Goldfelty account registration',
+    `username: ${input.username}`,
+    `email: ${input.email}`,
+    `address: ${input.address}`,
+    `issued: ${input.issuedAt}`
+  ].join('\n')
+}
+
+/** Something that can sign as one of the user's addresses: a connected wallet. */
+export interface AccountSigner {
+  address: string
+  name: string
+  sign(message: string): Promise<string>
+}
+
 export interface RegistrationResult {
   account: Account
-  /** False when goldfelty.com was unreachable and the account is local for now. */
   linked: boolean
   message?: string
+  /** For reporting totals, when the user has chosen to share them. Main process only. */
+  token?: string | null
+}
+
+export function localAccount(input: { username: string; email: string }): Account {
+  return {
+    username: normaliseUsername(input.username),
+    email: normaliseEmail(input.email),
+    goldfeltyId: `local-${randomUUID()}`,
+    createdAt: Date.now(),
+    linked: false,
+    address: null
+  }
 }
 
 /**
- * Register with goldfelty.com, proving ownership of the primary owner key by
- * signing a challenge. Falls back to a local-only account if the service cannot
- * be reached, and records that so Settings can offer to finish linking later.
+ * Register with goldfelty.com, proving control of `signer.address`.
+ *
+ * - Unreachable service: resolves with a local account and `linked: false`.
+ * - Service refuses (name taken, bad signature): throws ApiRefusedError, so
+ *   the user can change what they typed rather than end up half-registered.
+ * - User declines in the wallet: throws, and nothing is sent.
  */
 export async function registerAccount(
-  vault: Vault,
-  input: { username: string; email: string }
+  input: { username: string; email: string },
+  signer: AccountSigner,
+  existing: Account | null = null
 ): Promise<RegistrationResult> {
-  const username = input.username.trim().toLowerCase()
-  const email = input.email.trim()
+  const username = normaliseUsername(input.username)
+  const email = normaliseEmail(input.email)
   const usernameProblem = validateUsername(username)
-  if (usernameProblem) throw new Error(usernameProblem)
+  if (usernameProblem) throw new ApiRefusedError(usernameProblem, 400, 'BAD_USERNAME')
   const emailProblem = validateEmail(email)
-  if (emailProblem) throw new Error(emailProblem)
+  if (emailProblem) throw new ApiRefusedError(emailProblem, 400, 'BAD_EMAIL')
 
-  const owner = vault.deriveOwner(0)
-  const issuedAt = new Date().toISOString()
-  const statement = [
-    'Goldfelty account registration',
-    `username: ${username}`,
-    `email: ${email}`,
-    `address: ${owner.address}`,
-    `issued: ${issuedAt}`
-  ].join('\n')
+  const base: Account = existing ?? localAccount({ username, email })
 
-  let signature: string
-  try {
-    signature = await owner.signMessage(statement)
-  } catch (error) {
-    throw new Error(`Could not sign the registration request: ${(error as Error).message}`)
-  }
-
-  const base: Account = {
-    username,
-    email,
-    goldfeltyId: `local-${randomUUID()}`,
-    createdAt: Date.now(),
-    backedUp: false,
-    linked: false
-  }
-
-  try {
-    const body = await call<{ id: string }>('/accounts', {
-      method: 'POST',
-      body: JSON.stringify({ username, email, address: owner.address, statement, signature, issuedAt })
-    })
-    return { account: { ...base, goldfeltyId: body.id, linked: true }, linked: true }
-  } catch (error) {
+  // Check the service first, so the user is not asked to sign for nothing.
+  const status = await apiStatus()
+  if (!status.reachable) {
     return {
-      account: base,
+      account: { ...base, username, email },
       linked: false,
-      message: `Created offline — goldfelty.com could not be reached (${(error as Error).message}). You can link this account later from Settings.`
+      message: 'goldfelty.com couldn’t be reached, so your account is saved on this computer. Link it from Settings later.'
     }
+  }
+
+  const address = getAddress(signer.address)
+  const issuedAt = new Date().toISOString()
+  const statement = registrationStatement({ username, email, address, issuedAt })
+  const signature = await signer.sign(statement)
+
+  try {
+    const body = await call<{ id?: unknown; username?: unknown; token?: unknown }>('/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ username, email, address, issuedAt, signature })
+    })
+    if (typeof body.id !== 'string' || !/^gf_[0-9a-f-]{36}$/.test(body.id)) {
+      throw new ApiUnreachableError('goldfelty.com sent an unexpected response.')
+    }
+    // The address may already have had an account, under its original name.
+    const confirmedName = typeof body.username === 'string' && !validateUsername(body.username) ? body.username : username
+    return {
+      account: { ...base, username: confirmedName, email, goldfeltyId: body.id, linked: true, address },
+      linked: true,
+      token: typeof body.token === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(body.token) ? body.token : null,
+      message: confirmedName !== username ? `That wallet already had the account “${confirmedName}”, so it was linked instead.` : undefined
+    }
+  } catch (error) {
+    if (error instanceof ApiUnreachableError) {
+      return { account: { ...base, username, email }, linked: false, message: `${error.message} Your account is saved on this computer for now.` }
+    }
+    throw error
   }
 }
 
-/** Retry linking a local-only account. Offered in Settings → Account. */
-export async function linkExistingAccount(vault: Vault, account: Account): Promise<RegistrationResult> {
-  if (account.linked) return { account, linked: true }
-  return registerAccount(vault, { username: account.username, email: account.email })
+export interface TotalsReport {
+  value: number
+  currency: string
+  wallets: number
+}
+
+/**
+ * Share the portfolio total with goldfelty.com. Only called when the user has
+ * turned sharing on, and only ever sends these three fields.
+ */
+export async function reportTotals(token: string, totals: TotalsReport): Promise<void> {
+  await callAuthed('/reports', token, {
+    method: 'POST',
+    body: JSON.stringify({ value: Math.max(0, Math.round(totals.value * 100) / 100), currency: totals.currency, wallets: totals.wallets })
+  })
+}
+
+/** Stop sharing: goldfelty.com deletes what it had. */
+export async function withdrawTotals(token: string): Promise<void> {
+  await callAuthed('/reports', token, { method: 'DELETE' })
+}
+
+async function callAuthed(path: string, token: string, init: RequestInit): Promise<void> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  try {
+    const res = await fetch(`${GOLDFELTY_API}${path}`, {
+      ...init,
+      redirect: 'error',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      signal: controller.signal
+    })
+    if (!res.ok && res.status !== 204) throw new ApiRefusedError(`goldfelty.com refused the request (${res.status}).`, res.status)
+  } catch (error) {
+    if (error instanceof ApiRefusedError) throw error
+    throw new ApiUnreachableError('goldfelty.com couldn’t be reached.')
+  } finally {
+    clearTimeout(timer)
+  }
 }

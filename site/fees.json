@@ -1,0 +1,4 @@
+{
+  "feeBps": 50,
+  "note": "Goldfelty send fee in basis points (50 = 0.5%). The app accepts 0 to 1000 (10%) and shows the rate before every send."
+}
