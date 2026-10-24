@@ -17,9 +17,10 @@ export const MAX_FEE_BPS = 1000
 export const DEFAULT_FEE_BPS = 50
 
 /**
- * Networks where fees are taken: the EVM networks Exodus supports that
- * Goldfelty covers. The same Exodus address receives on all of them.
- * Testnets are never charged.
+ * Networks where fees are taken: the networks Exodus supports that Goldfelty
+ * can send on. One Exodus address receives on all the EVM networks; Bitcoin,
+ * Solana and Tron each have their own. Testnets are never charged, and
+ * Litecoin, Dogecoin and XRP can't be sent from Goldfelty at all.
  */
 export const FEE_CHAIN_IDS: ReadonlySet<number> = new Set([
   1, // Ethereum
@@ -28,7 +29,10 @@ export const FEE_CHAIN_IDS: ReadonlySet<number> = new Set([
   43114, // Avalanche C-Chain
   42161, // Arbitrum One
   10, // Optimism
-  8453 // Base
+  8453, // Base
+  -1, // Bitcoin
+  -501, // Solana
+  -195 // Tron
 ])
 
 export function clampFeeBps(value: unknown): number {

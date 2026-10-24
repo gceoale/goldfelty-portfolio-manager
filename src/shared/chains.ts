@@ -223,6 +223,9 @@ export const CHAINS: Chain[] = [
 /** EVM networks turned on for a new install. Other chains are always on: they cost nothing until a wallet uses them. */
 export const DEFAULT_CHAIN_IDS = [1, 8453, 42161, 10, 137]
 
+/** Ids of the chains that aren't EVM, by name. */
+export const CHAIN_IDS = { bitcoin: -1, litecoin: -2, dogecoin: -3, solana: -501, tron: -195, xrp: -144 } as const
+
 export const CHAIN_BY_ID = new Map(CHAINS.map((c) => [c.id, c]))
 
 export function getChain(id: number): Chain {

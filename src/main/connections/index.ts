@@ -3,8 +3,9 @@ import { BrowserBridge, WalletRequestError } from './browserBridge.ts'
 import { FrameConnector, FrameUnavailableError } from './frame.ts'
 import { WalletConnectService, wcConnectionId } from './walletconnect.ts'
 import { REGISTRY_BY_ID, FRAME_ID, providerIdFor } from '../../shared/walletRegistry.ts'
-import { getChain } from '../../shared/chains.ts'
-import type { ConnectStage, DetectedWallet, PendingConnection, WalletConnection } from '../../shared/types.ts'
+import { CHAIN_IDS, chainsOfFamily, getChain } from '../../shared/chains.ts'
+import { validateFor } from '../addresses.ts'
+import type { ChainFamily, ConnectStage, DetectedWallet, PendingConnection, WalletConnection } from '../../shared/types.ts'
 
 /**
  * One interface over the three ways Goldfelty reaches a wallet.
@@ -42,6 +43,9 @@ export interface ConnectionStore {
 
 export const browserConnectionId = (rdns: string): string => `browser:${rdns}`
 export const FRAME_CONNECTION_ID = 'frame'
+
+const FAMILY_ORDER: ChainFamily[] = ['evm', 'utxo', 'solana', 'tron', 'xrp']
+const FAMILY_LABEL: Record<ChainFamily, string> = { evm: 'Ethereum', utxo: 'Bitcoin', solana: 'Solana', tron: 'Tron', xrp: 'XRP' }
 
 export class ConnectionManager {
   readonly bridge = new BrowserBridge()
@@ -118,8 +122,13 @@ export class ConnectionManager {
   /**
    * Connect a browser wallet. If no Goldfelty tab is open yet, opens one in
    * the default browser and waits for the wallet to announce itself there.
+   *
+   * A wallet that does several chains (Phantom: Ethereum and Solana; OKX:
+   * Ethereum, Bitcoin, Solana and Tron) announces once per chain family, and
+   * each is connected in turn, as its own connection. The user can decline
+   * any of them; the call fails only if none connects.
    */
-  async connectBrowser(providerId: string, progress: (stage: ConnectStage) => void): Promise<WalletConnection> {
+  async connectBrowser(providerId: string, progress: (stage: ConnectStage) => void): Promise<WalletConnection[]> {
     await this.bridge.start()
     const entry = REGISTRY_BY_ID.get(providerId)
     const name = entry?.name ?? this.detected().find((d) => d.providerId === providerId)?.name ?? 'your wallet'
@@ -139,30 +148,84 @@ export class ConnectionManager {
         if (result === 'missing') throw new NotInstalledError(name, entry?.homepage ?? null)
         if (!result) throw new WalletRequestError('No Goldfelty tab opened in time. Try again.', 'TIMEOUT')
         found = result
+        // Its other chains are found by later scans of the page; give them a moment.
+        await new Promise((resolve) => setTimeout(resolve, 1_500))
       } finally {
         this.bridge.setWanted(null)
       }
     }
 
-    progress({ stage: 'approve-in-wallet', wallet: found.name })
-    const accounts = await this.bridge.request(found.rdns, found.name, 'eth_requestAccounts', [])
-    const chainHex = await this.bridge.request(found.rdns, found.name, 'eth_chainId', []).catch(() => null)
-    const connection: WalletConnection = {
+    const all = this.detected().filter((d) => d.providerId === found!.providerId)
+    if (!all.some((d) => d.rdns === found!.rdns)) all.push(found)
+    all.sort((a, b) => FAMILY_ORDER.indexOf(a.family) - FAMILY_ORDER.indexOf(b.family))
+
+    const connected: WalletConnection[] = []
+    let firstError: unknown = null
+    for (const wallet of all) {
+      try {
+        progress({ stage: 'approve-in-wallet', wallet: wallet.family === 'evm' ? wallet.name : `${wallet.name} (${FAMILY_LABEL[wallet.family]})` })
+        const connection = await this.connectOne(wallet)
+        this.store?.upsertConnection(connection)
+        connected.push(connection)
+      } catch (error) {
+        firstError ??= error
+      }
+    }
+    if (!connected.length) throw firstError ?? new WalletRequestError(`${name} didn’t share any accounts.`, 'NO_ACCOUNTS')
+    return connected
+  }
+
+  /** Ask one announced wallet for its accounts on its own chain family. */
+  private async connectOne(found: DetectedWallet): Promise<WalletConnection> {
+    const base = {
       id: browserConnectionId(found.rdns),
-      kind: 'browser',
-      family: 'evm',
+      kind: 'browser' as const,
+      family: found.family,
       name: found.name,
       providerId: found.providerId,
       rdns: found.rdns,
       icon: found.icon,
-      accounts: normaliseAccounts(accounts),
-      chainIds: chainHex ? [Number(chainHex)] : [],
       connectedAt: Date.now(),
       active: true,
       topic: null
     }
+    let connection: WalletConnection
+    if (found.family === 'evm') {
+      const accounts = await this.bridge.request(found.rdns, found.name, 'eth_requestAccounts', [])
+      const chainHex = await this.bridge.request(found.rdns, found.name, 'eth_chainId', []).catch(() => null)
+      connection = { ...base, accounts: normaliseAccounts(accounts), chainIds: chainHex ? [Number(chainHex)] : [] }
+    } else if (found.family === 'utxo') {
+      const raw = await this.bridge.request(found.rdns, found.name, 'gf_connect', [])
+      const accounts: string[] = []
+      const publicKeys: Record<string, string> = {}
+      for (const item of Array.isArray(raw) ? raw.slice(0, 20) : []) {
+        const a = item as { address?: unknown; publicKey?: unknown }
+        if (typeof a.address !== 'string') continue
+        let address: string
+        try {
+          address = validateFor('utxo', 'bitcoin', a.address)
+        } catch {
+          continue // a testnet or other-chain address
+        }
+        accounts.push(address)
+        if (typeof a.publicKey === 'string' && /^(02|03)[0-9a-f]{64}$|^[0-9a-f]{64}$/i.test(a.publicKey)) publicKeys[address] = a.publicKey.toLowerCase()
+      }
+      connection = { ...base, accounts: [...new Set(accounts)], chainIds: [CHAIN_IDS.bitcoin], publicKeys }
+    } else {
+      const raw = await this.bridge.request(found.rdns, found.name, 'gf_connect', [])
+      const chain = chainsOfFamily(found.family)[0]
+      const accounts: string[] = []
+      for (const a of Array.isArray(raw) ? raw.slice(0, 20) : []) {
+        if (typeof a !== 'string') continue
+        try {
+          accounts.push(validateFor(found.family, chain.key, a))
+        } catch {
+          // not an address on this chain
+        }
+      }
+      connection = { ...base, accounts: [...new Set(accounts)], chainIds: [chain.id] }
+    }
     if (!connection.accounts.length) throw new WalletRequestError(`${found.name} didn’t share any accounts.`, 'NO_ACCOUNTS')
-    this.store?.upsertConnection(connection)
     return connection
   }
 
@@ -295,6 +358,36 @@ export class ConnectionManager {
       throw new WalletRequestError('The wallet returned something that isn’t a signature.', 'BAD_SIGNATURE')
     }
     return signature
+  }
+
+  private browserOf(connectionId: string, family: ChainFamily): WalletConnection {
+    const connection = this.get(connectionId)
+    if (connection.kind !== 'browser' || connection.family !== family || !connection.rdns) {
+      throw new WalletRequestError('That wallet can’t sign on this chain.', 'WRONG_FAMILY')
+    }
+    return connection
+  }
+
+  /** Ask a Bitcoin wallet to sign the given inputs of a PSBT. Returns the PSBT it gives back, as hex or base64. */
+  async signPsbt(connectionId: string, psbtHex: string, inputs: number[], address: string): Promise<string> {
+    const c = this.browserOf(connectionId, 'utxo')
+    const signed = await this.bridge.request(c.rdns!, c.name, 'gf_signPsbt', [psbtHex, inputs, address])
+    if (typeof signed !== 'string' || signed.length > 400_000) throw new WalletRequestError('The wallet returned something that isn’t a PSBT.', 'BAD_PSBT')
+    return signed
+  }
+
+  /** Ask a Solana wallet to sign a serialized transaction. Returns the signed transaction, base64. */
+  async signSolana(connectionId: string, address: string, txBase64: string): Promise<string> {
+    const c = this.browserOf(connectionId, 'solana')
+    const signed = await this.bridge.request(c.rdns!, c.name, 'gf_signSolana', [txBase64, address])
+    if (typeof signed !== 'string' || signed.length > 8_000) throw new WalletRequestError('The wallet returned something that isn’t a transaction.', 'BAD_TX')
+    return signed
+  }
+
+  /** Ask a Tron wallet to sign a transaction built by TronGrid. Returns the transaction with its signature. */
+  async signTron(connectionId: string, tx: unknown): Promise<unknown> {
+    const c = this.browserOf(connectionId, 'tron')
+    return this.bridge.request(c.rdns!, c.name, 'gf_signTron', [tx])
   }
 
   async disconnect(connectionId: string): Promise<void> {

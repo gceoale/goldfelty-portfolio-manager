@@ -171,7 +171,8 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
   // specific first, since several also claim to be MetaMask.
   setTimeout(function () {
     var eth = window.ethereum;
-    if (eth && !Object.keys(providers).length) {
+    var anyEvm = Object.keys(providers).some(function (k) { return !/^(sol|btc|tron):/.test(k); });
+    if (eth && !anyEvm) {
       var guess =
         eth.isRabby ? ['io.rabby', 'Rabby'] :
         eth.isBraveWallet ? ['com.brave.wallet', 'Brave Wallet'] :
@@ -184,6 +185,173 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
     }
     hello().then(loadWant);
   }, 700);
+
+  /* ---- Wallets for other chains ----------------------------------------------
+   * Bitcoin, Solana and Tron wallets don't speak EIP-1193, so each gets a small
+   * adapter with the same request() shape, answering Goldfelty's own gf_*
+   * methods. Keys carry the chain family (sol:, btc:, tron:); the app decides
+   * the family from the key alone. Bytes travel as base64 or hex strings, and
+   * the app checks everything a wallet returns before using it. */
+
+  function b64ToBytes(s) { var bin = atob(s); var out = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+  function bytesToB64(bytes) { var s = ''; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return btoa(s); }
+  function slug(name) { return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40); }
+  function adapter(key, name, icon, handlers) {
+    add({ uuid: key, rdns: key, name: name, icon: typeof icon === 'string' ? icon : null }, {
+      request: function (req) {
+        var fn = handlers[req.method];
+        if (!fn) return Promise.reject({ message: name + ' can’t do that.', code: 'UNSUPPORTED' });
+        return Promise.resolve().then(function () { return fn.apply(null, req.params || []); });
+      }
+    });
+  }
+  // JSON-RPC style answers ({ result } or { error }) from Xverse and Leather.
+  function rpcResult(res) {
+    if (res && res.error) throw { message: res.error.message || 'The wallet declined.', code: res.error.code };
+    if (res && res.status === 'error') throw { message: (res.error && res.error.message) || 'The wallet declined.', code: 4001 };
+    return res && res.result !== undefined ? res.result : res;
+  }
+
+  // Solana: the Wallet Standard, which Phantom, Solflare, Backpack and others implement.
+  function registerStandard(wallet) {
+    try {
+      if (!wallet || typeof wallet.name !== 'string' || !wallet.features) return;
+      var chains = Array.prototype.slice.call(wallet.chains || []);
+      if (!chains.some(function (c) { return String(c).indexOf('solana:') === 0; })) return;
+      var connect = wallet.features['standard:connect'];
+      var signTx = wallet.features['solana:signTransaction'];
+      if (!connect || !signTx) return;
+      var key = 'sol:' + slug(wallet.name);
+      if (providers[key]) return;
+      var accountFor = function (address) {
+        var found = (wallet.accounts || []).filter(function (a) { return a.address === address; })[0];
+        if (found) return Promise.resolve(found);
+        return Promise.resolve(connect.connect({ silent: true })).catch(function () { return connect.connect(); }).then(function () {
+          var again = (wallet.accounts || []).filter(function (a) { return a.address === address; })[0];
+          if (!again) throw { message: wallet.name + ' isn’t sharing that account any more. Reconnect it in Goldfelty.', code: 'NO_ACCOUNT' };
+          return again;
+        });
+      };
+      adapter(key, wallet.name, wallet.icon, {
+        gf_connect: function () {
+          return connect.connect().then(function (out) {
+            var accounts = (out && out.accounts) || wallet.accounts || [];
+            return accounts.map(function (a) { return a.address; });
+          });
+        },
+        gf_signSolana: function (txBase64, address) {
+          return accountFor(address).then(function (account) {
+            return signTx.signTransaction({ account: account, transaction: b64ToBytes(txBase64), chain: 'solana:mainnet' });
+          }).then(function (out) {
+            var signed = Array.isArray(out) ? out[0] : out;
+            return bytesToB64(new Uint8Array(signed.signedTransaction));
+          });
+        }
+      });
+    } catch (e) {}
+  }
+  var standardApi = { register: function () { for (var i = 0; i < arguments.length; i++) registerStandard(arguments[i]); return function () {}; } };
+  window.addEventListener('wallet-standard:register-wallet', function (e) {
+    try { if (typeof e.detail === 'function') e.detail(standardApi); } catch (err) {}
+  });
+  try { window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: standardApi })); } catch (e) {}
+
+  // Bitcoin: wallets with the UniSat-style API, then Xverse and Leather.
+  function unisatStyle(key, name, p) {
+    if (!p || typeof p.requestAccounts !== 'function' || typeof p.signPsbt !== 'function' || providers[key]) return;
+    adapter(key, name, null, {
+      gf_connect: function () {
+        return p.requestAccounts().then(function (accounts) {
+          return Promise.resolve(typeof p.getPublicKey === 'function' ? p.getPublicKey() : null).then(function (pk) {
+            return (accounts || []).slice(0, 1).map(function (a) { return { address: a, publicKey: pk || null }; });
+          });
+        });
+      },
+      gf_signPsbt: function (psbtHex, inputs, address) {
+        return p.signPsbt(psbtHex, {
+          autoFinalized: false,
+          toSignInputs: inputs.map(function (i) { return { index: i, address: address }; })
+        });
+      }
+    });
+  }
+  function xverse(p) {
+    if (!p || typeof p.request !== 'function' || providers['btc:xverse']) return;
+    adapter('btc:xverse', 'Xverse', null, {
+      gf_connect: function () {
+        return Promise.resolve(p.request('getAddresses', { purposes: ['payment'], message: 'Goldfelty will show this address’s balance.' }))
+          .then(rpcResult, function () { return Promise.resolve(p.request('getAccounts', { purposes: ['payment'] })).then(rpcResult); })
+          .then(function (r) {
+            var list = (r && r.addresses) || r || [];
+            return list.filter(function (a) { return !a.purpose || a.purpose === 'payment'; })
+              .map(function (a) { return { address: a.address, publicKey: a.publicKey || null }; });
+          });
+      },
+      gf_signPsbt: function (psbtHex, inputs, address) {
+        var b64 = bytesToB64(new Uint8Array(psbtHex.match(/../g).map(function (h) { return parseInt(h, 16); })));
+        var signInputs = {}; signInputs[address] = inputs;
+        return Promise.resolve(p.request('signPsbt', { psbt: b64, signInputs: signInputs, broadcast: false }))
+          .then(rpcResult).then(function (r) { return r.psbt; });
+      }
+    });
+  }
+  function leather(p) {
+    if (!p || typeof p.request !== 'function' || providers['btc:leather']) return;
+    adapter('btc:leather', 'Leather', null, {
+      gf_connect: function () {
+        return Promise.resolve(p.request('getAddresses')).then(rpcResult).then(function (r) {
+          return ((r && r.addresses) || []).filter(function (a) { return a.symbol === 'BTC' && a.type === 'p2wpkh'; })
+            .map(function (a) { return { address: a.address, publicKey: a.publicKey || null }; });
+        });
+      },
+      gf_signPsbt: function (psbtHex, inputs) {
+        return Promise.resolve(p.request('signPsbt', { hex: psbtHex, signAtIndex: inputs, network: 'mainnet', broadcast: false }))
+          .then(rpcResult).then(function (r) { return r.hex; });
+      }
+    });
+  }
+
+  // Tron: TronLink and the wallets that copy its API.
+  function tronStyle(key, name, t) {
+    if (!t || providers[key]) return;
+    var web = function () { return t.tronWeb || (key === 'tron:tronlink' && window.tronWeb) || null; };
+    if (typeof t.request !== 'function' && !web()) return;
+    adapter(key, name, null, {
+      gf_connect: function () {
+        var ask = typeof t.request === 'function'
+          ? Promise.resolve(t.request({ method: 'tron_requestAccounts' })).catch(function () { return t.request({ method: 'eth_requestAccounts' }); })
+          : Promise.resolve(null);
+        return ask.then(function (r) {
+          if (r && r.code === 4001) throw { message: 'Declined in ' + name + '.', code: 4001 };
+          var w = web();
+          var address = w && w.defaultAddress && w.defaultAddress.base58;
+          if (!address && Array.isArray(r) && typeof r[0] === 'string') address = r[0];
+          if (!address) throw { message: 'Unlock ' + name + ', then try again.', code: 'LOCKED' };
+          return [address];
+        });
+      },
+      gf_signTron: function (tx) {
+        var w = web();
+        if (!w || !w.trx) throw { message: 'Unlock ' + name + ', then try again.', code: 'LOCKED' };
+        return w.trx.sign(tx);
+      }
+    });
+  }
+
+  function scanOtherChains() {
+    unisatStyle('btc:unisat', 'UniSat', window.unisat);
+    unisatStyle('btc:okx', 'OKX Wallet', window.okxwallet && window.okxwallet.bitcoin);
+    unisatStyle('btc:bitget', 'Bitget Wallet', window.bitkeep && window.bitkeep.unisat);
+    unisatStyle('btc:onekey', 'OneKey', window.$onekey && window.$onekey.btc);
+    xverse((window.XverseProviders && window.XverseProviders.BitcoinProvider) || window.BitcoinProvider);
+    leather(window.LeatherProvider);
+    tronStyle('tron:tronlink', 'TronLink', window.tronLink || window.tron);
+    tronStyle('tron:okx', 'OKX Wallet', window.okxwallet && window.okxwallet.tronLink);
+    tronStyle('tron:bitget', 'Bitget Wallet', window.bitkeep && window.bitkeep.tronLink);
+  }
+  // Some extensions inject late; look twice.
+  setTimeout(scanOtherChains, 600);
+  setTimeout(scanOtherChains, 2500);
 
   // What the app is waiting for comes from the app, never from the URL.
   function loadWant() {
@@ -218,7 +386,11 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
     eth_sendTransaction: 'Approve transfer',
     personal_sign: 'Approve signature',
     wallet_switchEthereumChain: 'Approve network switch',
-    wallet_addEthereumChain: 'Approve new network'
+    wallet_addEthereumChain: 'Approve new network',
+    gf_connect: 'Approve connection',
+    gf_signPsbt: 'Approve transfer',
+    gf_signSolana: 'Approve transfer',
+    gf_signTron: 'Approve transfer'
   };
 
   function run(job) {

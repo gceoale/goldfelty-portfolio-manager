@@ -1,9 +1,9 @@
 import { BrowserWindow, app, clipboard, ipcMain, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron'
-import { getAddress, isAddress } from 'ethers'
 import type { Store } from './store.ts'
 import type { Prefs } from './prefs.ts'
 import { Vault, WeakPasswordError } from './vault.ts'
 import { scorePassword, MIN_PASSWORD_SCORE, WrongPasswordError } from './crypto.ts'
+import { detectAddress } from './addresses.ts'
 import { MAX_WALLETS, detachConnection, registerConnectionAccounts, trackAddress } from './wallets.ts'
 import { loadPortfolio } from './portfolio.ts'
 import { executeTransfer, quoteTransfer, receiveRoutes, routesForSymbol, type Sender } from './transfers.ts'
@@ -19,7 +19,7 @@ import {
   type AccountSigner
 } from './goldfelty.ts'
 import { probeChain } from './rpc.ts'
-import { currentFeeBps, feeRecipient } from './fees.ts'
+import { currentFeeBps, feeRecipient, feesEnabled } from './fees.ts'
 import { clearPriceMemory } from './prices.ts'
 import type { ConnectionManager, ConnectStage } from './connections/index.ts'
 import { CHAINS, TOKENS, TOKEN_BY_KEY, getChain } from '../shared/chains.ts'
@@ -243,7 +243,10 @@ export function registerIpc(runtime: Runtime): void {
       const c = store.isOpen ? store.connection(connectionId) : undefined
       return !!c && connections.isActive(c)
     },
-    sendTransaction: (connectionId, chain, tx) => connections.sendTransaction(connectionId, chain, tx)
+    sendTransaction: (connectionId, chain, tx) => connections.sendTransaction(connectionId, chain, tx),
+    signPsbt: (connectionId, psbtHex, inputs, address) => connections.signPsbt(connectionId, psbtHex, inputs, address),
+    signSolana: (connectionId, address, txBase64) => connections.signSolana(connectionId, address, txBase64),
+    signTron: (connectionId, tx) => connections.signTron(connectionId, tx)
   }
 
   // ---- app ---------------------------------------------------------------
@@ -271,7 +274,12 @@ export function registerIpc(runtime: Runtime): void {
   handle('app:reference', () => ({ chains: CHAINS, tokens: TOKENS, registry: WALLET_REGISTRY, maxWallets: MAX_WALLETS }))
 
   // For Settings and the send screen: whether this build charges a fee, and the rate now.
-  handle('app:feeInfo', async () => ({ enabled: feeRecipient() !== null, bps: await currentFeeBps(), recipient: feeRecipient() }))
+  handle('app:feeInfo', async () => ({
+    enabled: feesEnabled(),
+    bps: await currentFeeBps(),
+    recipient: feeRecipient(),
+    recipients: { evm: feeRecipient('evm'), utxo: feeRecipient('utxo'), solana: feeRecipient('solana'), tron: feeRecipient('tron') }
+  }))
 
   handle('app:dismissUpgradeNotice', () => {
     prefs.setUpgradeNotice(null)
@@ -412,7 +420,9 @@ export function registerIpc(runtime: Runtime): void {
     const safe: Partial<Wallet> = {}
     if (typeof p.label === 'string' && p.label.trim()) safe.label = p.label.trim().slice(0, 48)
     if (Array.isArray(p.chainIds)) {
-      const ids = [...new Set(p.chainIds.map(Number).filter((c) => CHAINS.some((chain) => chain.id === c)))]
+      const family = store.wallet(id(walletId))?.family ?? 'evm'
+      // Only networks of the wallet's own kind: a Bitcoin address means nothing on Ethereum.
+      const ids = [...new Set(p.chainIds.map(Number).filter((c) => CHAINS.some((chain) => chain.id === c && chain.family === family)))]
       if (ids.length) safe.chainIds = ids
     }
     if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) safe.color = p.color
@@ -474,8 +484,9 @@ export function registerIpc(runtime: Runtime): void {
     requireUnlocked(runtime)
     touch()
     const progress = (stage: ConnectStage): void => broadcast(runtime, 'connections:progress', stage)
-    const connection = await connections.connectBrowser(str(providerId, 120, 'wallet'), progress)
-    return { connection, wallets: afterConnect(runtime, connection) }
+    const list = await connections.connectBrowser(str(providerId, 120, 'wallet'), progress)
+    const wallets = list.flatMap((connection) => afterConnect(runtime, connection))
+    return { connection: list[0], connections: list, wallets }
   })
 
   handle('connections:detectFrame', () => connections.detectFrame())
@@ -589,9 +600,12 @@ export function registerIpc(runtime: Runtime): void {
 
   handle('receive:checkAddress', (address) => {
     // Lets the UI confirm an address it is about to show belongs to a wallet here.
-    const a = str(address, 64, 'address')
-    if (!isAddress(a)) return false
-    return !!store.walletByAddress(getAddress(a))
+    const a = str(address, 128, 'address')
+    try {
+      return !!store.walletByAddress(detectAddress(a).address)
+    } catch {
+      return false
+    }
   })
 
   // ---- settings ----------------------------------------------------------
