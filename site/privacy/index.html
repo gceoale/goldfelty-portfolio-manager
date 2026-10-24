@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+<title>Privacy Policy · Goldfelty</title>
+<meta name="description" content="What Goldfelty keeps on your computer, what it sends to goldfelty.com, and what it never collects." />
+<link rel="canonical" href="https://goldfelty.com/privacy/" />
+<link rel="icon" href="/icon.png" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="wrap narrow">
+  <header class="top">
+    <a class="brand" href="/"><span class="mark">G</span> Goldfelty</a>
+    <nav><a href="/">Home</a><a href="/terms/">Terms</a></nav>
+  </header>
+
+  <article class="doc">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated 24 October 2026</p>
+
+    <h2>On your computer</h2>
+    <p>
+      The app stores your connected wallets’ addresses, labels, balances, history and settings on your computer,
+      encrypted with a key protected by your password. It never stores private keys or recovery phrases, because it
+      never has them.
+    </p>
+
+    <h2>What we receive</h2>
+    <table>
+      <tr><th>When</th><th>What goldfelty.com receives</th></tr>
+      <tr><td>Always</td><td>Only a request for the current fee rate (goldfelty.com/fees.json), which carries nothing about you beyond the IP address any web request shows. The app has no analytics or crash reporting.</td></tr>
+      <tr><td>You create an account</td><td>Your username, email address, one wallet address and a signature from that wallet proving you control it.</td></tr>
+      <tr><td>You turn on “Share my portfolio total”</td><td>Your total portfolio value, its currency and how many wallets it spans, at most every six hours. Never individual addresses or holdings.</td></tr>
+      <tr><td>Any request to the account service</td><td>Your IP address, kept only as a one-way hash in short-lived rate-limit counters that are regularly deleted.</td></tr>
+    </table>
+
+    <h2>How we use it</h2>
+    <p>
+      Account details reserve your username and let us contact you about your account. Shared totals let the Owner see
+      how much value Goldfelty’s users manage, in aggregate and per account. We don’t sell any of it, and we don’t
+      share it except with the hosting providers below or where the law requires.
+    </p>
+
+    <h2>Fees are public</h2>
+    <p>
+      Fee payments, like every blockchain transaction, are public on the network they’re sent on, and show your
+      address sending to the Owner’s fee address.
+    </p>
+
+    <h2>Services involved</h2>
+    <p>
+      goldfelty.com is hosted on GitHub Pages and its account service on Cloudflare. The app also contacts blockchain
+      RPC providers to read balances, CoinGecko for prices, and WalletConnect if you connect a phone wallet. Each of
+      those sees your IP address and the requests the app makes to it. You can point the app at your own node in
+      Settings.
+    </p>
+
+    <h2>Your choices</h2>
+    <ul>
+      <li>Turn sharing off in Settings. That deletes the total we hold, straight away.</li>
+      <li>Ask for your account and everything linked to it to be deleted at <a href="mailto:support@goldfelty.com">support@goldfelty.com</a>.</li>
+      <li>Use the app without an account at all.</li>
+    </ul>
+  </article>
+
+  <footer>
+    <span>© 2026 Goldfelty</span>
+    <span><a href="/">Home</a> · <a href="/terms/">Terms</a></span>
+  </footer>
+</div>
+</body>
+</html>

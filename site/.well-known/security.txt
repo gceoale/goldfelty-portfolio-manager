@@ -1,0 +1,5 @@
+Contact: mailto:security@goldfelty.com
+Expires: 2027-10-24T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://goldfelty.com/.well-known/security.txt
+Policy: https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/blob/main/SECURITY.md
