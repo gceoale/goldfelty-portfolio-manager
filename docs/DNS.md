@@ -42,27 +42,19 @@ yours. Don't delete it.
 
 ## 3. The API
 
-```sh
-cd api
-npm install
-npm run db:create      # prints a database_id
-# paste that id into wrangler.toml
-npm run db:migrate
-npm run deploy
-```
+The `Deploy account API` workflow puts it live once the repository has the
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets;
+[api/README.md](../api/README.md) lists the token's permissions. It creates the
+database, applies the schema and claims `api.goldfelty.com` as a custom domain,
+so Cloudflare creates the DNS record itself. Don't add an `api` record by hand:
+an existing one blocks the custom domain.
 
-`wrangler.toml` declares `api.goldfelty.com` as a custom domain, so Cloudflare
-creates the DNS record itself — there's nothing to add by hand. If the zone
-isn't on Cloudflare yet this step fails; go back to step 1.
-
-The desktop app calls `https://api.goldfelty.com/v1`. Until that resolves,
-accounts are created locally and the app says so. Nothing breaks; people just
-don't get a reserved username. Set `GOLDFELTY_API_URL` to test against a
-staging deployment.
+The desktop app calls `https://api.goldfelty.com/v1`. Until that answers,
+accounts are kept on the user's computer and the app says so.
 
 ## 4. Email
 
-`support@goldfelty.com` needs an inbox provider — Fastmail, Google Workspace,
+`support@goldfelty.com` (and `security@`, below) needs an inbox provider — Fastmail, Google Workspace,
 Migadu. They'll give you MX records and a DKIM record. Add those, then SPF and
 DMARC yourself:
 
@@ -79,13 +71,11 @@ spam.
 Start DMARC at `p=none` if you want to read the reports for a week before
 enforcing.
 
-## 5. Deep links
+## 5. Security contact
 
-`https://goldfelty.com/wc?uri=…` works as soon as Pages is live. It's a page
-that redirects to `goldfelty://`, so it needs nothing beyond step 2.
-
-The `goldfelty://` scheme is registered by the installer, so it only works once
-someone has the app.
+`site/.well-known/security.txt` and `SECURITY.md` give
+`security@goldfelty.com` as the address for vulnerability reports. Create it
+as an alias of `support@` with your mail provider.
 
 ## Checking it worked
 

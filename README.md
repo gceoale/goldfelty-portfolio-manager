@@ -1,110 +1,120 @@
 # Goldfelty Portfolio Manager
 
-A desktop app for the wallets you already use. Connect MetaMask, Rainbow,
-Phantom or Coinbase, see them together, and send across seven networks without
-juggling tabs. macOS, Windows and Linux, on both ARM and Intel.
+A desktop app that shows the crypto wallets you already use in one place: what
+you hold across all of them, what it's worth, and how that changes. Send and
+receive from one screen. macOS, Windows and Linux, on ARM and Intel.
 
-> Not audited, not signed. Use an amount you wouldn't mind losing.
+Goldfelty doesn't create wallets and never holds keys. Your wallets approve
+every transfer and signature.
 
-## The four tabs
+> Not independently audited, and builds aren't signed by Apple or Microsoft
+> yet. See [docs/SECURITY-AUDIT.md](docs/SECURITY-AUDIT.md).
 
-**Home** shows what everything is worth, how it's moved over 24h through
-all-time, where it's allocated, and which wallet holds what. Pick an asset and
-it breaks down by wallet and chain.
+## Wallets
 
-**Send** asks for an asset, then a route. If three wallets hold USDC it lists
-all three with their balances and networks and waits for you to choose, rather
-than picking one for you. Then it quotes gas and flags anything odd — sending
-to a token contract, a signer too low on gas, a first use that needs a
-deployment.
+**Browser extensions**, through Goldfelty's own connection: MetaMask, Rabby,
+Coinbase Wallet, Phantom, Brave Wallet, Trust Wallet, OKX Wallet, Rainbow,
+Zerion, Frame Companion, Taho, Enkrypt, Exodus, Backpack, Bitget Wallet,
+Uniswap Extension, Core, Talisman, SubWallet, Ronin Wallet, TokenPocket,
+Coin98, SafePal, Ctrl, OneKey, Magic Eden, Wigwam, Fordefi, Zeal, Ambire, Gate
+Wallet, Opera Wallet and Crypto.com Onchain. Any other extension that announces
+itself with EIP-6963 shows up too.
 
-**Receive** works the same way in reverse. Choose the asset, choose which
-wallet takes it, and only then does an address appear. Handing out the right
-address on the wrong network is an easy way to lose money, so the warning names
-the network.
+**Frame**, the desktop wallet, over its local socket. Ledger, Trezor and
+GridPlus work through it.
 
-**Settings** is where wallets get connected, networks get toggled, RPC
-endpoints get overridden, and the password gets changed.
+**Phone wallets**, over WalletConnect. This is the only connection that uses an
+outside relay, because a phone can't reach your computer directly.
 
-The tab rail is down the left. `⌘1`–`⌘4` or `Ctrl+1`–`4`.
+Networks: Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Avalanche,
+plus Sepolia for testing.
 
-## Connecting a wallet
+## How browser wallets connect
 
-Three ways, because no one way reaches everything:
+Extensions live inside the browser, out of reach of a desktop app. Goldfelty
+serves a small page on `127.0.0.1` and opens it in your browser with a one-time
+link. The page finds every wallet installed there (EIP-6963) and passes
+requests between the app and the wallet you picked. One tab carries all of
+them. It talks to nothing but the app and the wallets in that browser.
 
-**WalletConnect** covers wallet apps — on your phone by QR, or on this machine
-by deep link. Several hundred of them.
+The one-time link is swapped for an `HttpOnly` cookie on first use, so nothing
+left in your browser history can reconnect. Requests from any other site, or
+through DNS rebinding, are refused.
 
-**A browser bridge** covers extensions. Extensions live inside the browser and
-a desktop app can't reach them, so Goldfelty serves a page on `127.0.0.1`
-behind a single-use token and opens it in your browser. That tab *is* the
-connection; close it and signing stops.
+## The app
 
-**Or make new ones.** Smart-contract accounts derived from one recovery phrase,
-for people who don't already have a wallet.
+- **Overview**: total value, change over a day, week, month, year or all time,
+  holdings across wallets with a breakdown by wallet and network, recent activity.
+- **Send**: pick the asset; if several wallets hold it, you choose which one
+  sends. The review shows the network fee and Goldfelty's fee before anything is
+  sent. Goldfelty switches your wallet to the right network first, warns about
+  lookalike addresses, and afterwards checks the chain recorded what you approved.
+- **Receive**: pick the asset, then the wallet and network, and only then is the
+  address shown.
+- **Activity**, a page per wallet, and **Settings**.
 
-Connected wallets are used as they are — your address, your balance, nothing to
-deploy. Goldfelty holds no key for them, so sends are approved in the wallet
-app rather than behind a password here.
+`Cmd/Ctrl+1` to `4` switch pages, `Cmd/Ctrl+L` locks.
 
-## Wallets it creates itself
+## Your data
 
-These are [ERC-1167 clones](contracts/GoldfeltyAccount.sol) of an
-owner-controlled account, deployed by a CREATE2 factory. The address is a pure
-function of `(factory, owner, salt)`, which buys two useful things: the same
-address on every chain, and an address you can receive at before the contract
-exists. It gets deployed the first time you send from it.
+Goldfelty keeps what it knows about your wallets on your computer, encrypted
+(AES-256-GCM) under a random key that your password unwraps through scrypt.
+It locks after idle time, on sleep and when your screen locks.
 
-Owner keys come from `m/44'/60'/0'/0/i`, so one 24-word backup covers all of
-them.
+Nothing is sent to goldfelty.com unless you create an account (username, email,
+and a wallet signature proving it's you) or turn on **Share my portfolio total**
+(your total, its currency and a wallet count; off by default).
 
-## Security
+## Fee
 
-Your password is stretched with scrypt (N=2¹⁷) into a key that encrypts the
-vault with AES-256-GCM. Neither it nor the phrase leaves the machine.
+Goldfelty takes a fee on tokens sent through it: 0.5% for now, paid on top of
+the amount sent, as a separate transaction your wallet asks you to approve. The
+owner of goldfelty.com can set it from 0% to 10% by editing
+[`site/fees.json`](site/fees.json); the app clamps whatever it reads to that
+range and never charges more than the rate shown on the review screen.
 
-The decrypted seed stays in the main process. The renderer only ever sees
-addresses and balances, and the preload bridge exposes named verbs — there's no
-generic `invoke(channel, …)` to abuse.
+The fee goes to the address in the `GOLDFELTY_FEE_ADDRESS` repository variable,
+which is compiled into each build. It's deliberately not read at runtime, so a
+compromised website can't redirect fees. With no address set, builds charge no
+fee.
 
-The recovery phrase is shown once, during setup, behind a ticket that's
-destroyed when you confirm the backup. There's deliberately no way to show it
-again: a wallet that reveals its seed on demand is one screen-share from empty.
+## Setting up the services
 
-The vault locks on idle, on quit, and if the renderer crashes. The renderer
-runs sandboxed with context isolation, a strict CSP, navigation blocked and
-every web permission denied. All network traffic goes through the main process.
+| What | Where | Needed for |
+|---|---|---|
+| `GOLDFELTY_FEE_ADDRESS` | Repository variable | The send fee. Your Exodus Ethereum address. |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Repository secrets | Deploying api.goldfelty.com, so sign-up works. See [api/README.md](api/README.md). |
+| `GOLDFELTY_ADMIN_TOKEN` | Repository secret | The owner dashboard at goldfelty.com/admin. Any random string of 32+ characters. |
+| `WALLETCONNECT_PROJECT_ID` | Repository variable (optional) | Overrides the project ID that ships with the build. |
+| `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Repository secrets (optional) | Signing and notarising the builds. |
 
 ## Working on it
 
 ```sh
 npm install
-npm run dev        # hot reload
+npm run dev          # hot reload
 npm run typecheck
-npm test           # 72 tests
+npm test             # main-process tests on Node's own TypeScript stripping
 npm run build
-npm run smoke      # drives the real app end to end, screenshots each step
+xvfb-run -a npm run e2e   # drives the built app with a fake browser wallet
 ```
 
-Tests run on Node's own TypeScript stripping — no build step, no framework.
-`npm run smoke` is the one that catches things the compiler can't; it found a
-runtime-only import bug that typechecked fine.
-
-On a headless box: `xvfb-run -a npm run smoke`.
+`npm run e2e` launches the real app with a fake EIP-6963 wallet in a separate
+Chromium page, the real account API code on a local port, and mock RPC and price
+servers. It walks setup, connecting, sign-up, sending with the fee, every page,
+dark mode and locking, and fails on any console error or CSP violation.
+Screenshots land in `release/e2e/`.
 
 ## Installing on macOS
 
-Unsigned builds get quarantined, and macOS reports that as *"damaged and can't
-be opened"*. It isn't damaged. After moving it to Applications:
+Unsigned builds get quarantined, which macOS reports as *"damaged and can't be
+opened"*. After moving the app to Applications:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"
 ```
 
-Builds are ad-hoc signed (`scripts/afterPack.cjs`) so the bundle is internally
-consistent and runs on Apple silicon once quarantine is cleared. Getting rid of
-that step needs a Developer ID and notarisation: set `CSC_LINK`,
-`CSC_KEY_PASSWORD` and the `APPLE_*` secrets and the workflow handles both.
+Each release lists SHA-256 checksums in `SHA256SUMS.txt`.
 
 ## Building installers
 
@@ -114,40 +124,22 @@ npm run dist:win     # installer + portable, x64 and arm64
 npm run dist:linux   # AppImage, deb, rpm, tar.gz, x64 and arm64
 ```
 
-Each platform builds on its own OS. `.github/workflows/release.yml` does all
-three and attaches everything to a release — push a `v*` tag, or run it
-manually with a version.
-
-## WalletConnect
-
-A project ID identifies the app, not the user. One ships with the build, so
-nobody installing this has to think about it. Override it with
-`MAIN_VITE_WALLETCONNECT_PROJECT_ID` at build time, or with a
-`WALLETCONNECT_PROJECT_ID` repository variable, which is how you'd rotate it.
+`.github/workflows/release.yml` builds all three on their own OS and attaches
+them to a release. Run it with a version, or push a `v*` tag.
 
 ## Layout
 
 ```
-contracts/    the account contract, its factory, how to deploy them
-src/main/     vault, store, RPC, prices, portfolio, transfers, connections
-src/preload/  the named-verb bridge — the renderer's entire API
-src/renderer/ React UI
-src/shared/   types, chains, tokens, deep-link parsing
-api/          account registration — Cloudflare Worker + D1
-site/         goldfelty.com
-docs/DNS.md   Cloudflare, Pages, Worker and email setup
-tests/        72 tests over the main-process logic (api/ has 21 more)
+src/main/             vault, encrypted store, settings, portfolio, transfers, fees
+src/main/connections/ browser bridge, Frame, WalletConnect, and one manager over them
+src/preload/          the renderer's whole API, as named verbs
+src/renderer/         the UI
+src/shared/           types, chains, tokens, the wallet registry, fee rules
+api/                  accounts for goldfelty.com: Cloudflare Worker + D1
+site/                 goldfelty.com, including /terms, /privacy and /admin
+docs/                 DNS setup and the security audit
+tests/                unit tests; scripts/e2e.cjs for the whole app
 ```
-
-## Before real money
-
-Deploy your own contracts ([contracts/DEPLOYMENT.md](contracts/DEPLOYMENT.md))
-and point `GOLDFELTY_FACTORY` and `GOLDFELTY_IMPLEMENTATION` at them, or check
-that the defaults match a deployment you trust. Until the factory exists on a
-chain, receiving works but a first send reverts.
-
-This only affects wallets Goldfelty creates. Connected wallets are ordinary
-accounts and send immediately.
 
 ## Licence
 

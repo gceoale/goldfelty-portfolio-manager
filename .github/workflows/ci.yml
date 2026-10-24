@@ -43,3 +43,28 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm test
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The fake wallet's page runs in Chromium; the e2e imports the API code.
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm ci
+        working-directory: api
+      - run: npx electron-vite build
+      - run: xvfb-run -a npm run e2e
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: release/e2e
+          retention-days: 7
