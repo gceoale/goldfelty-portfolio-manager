@@ -86,7 +86,9 @@ const api = {
     list: () => call<Wallet[]>('wallets:list'),
     update: (id: string, patch: Partial<Pick<Wallet, 'label' | 'chainIds' | 'color' | 'archived' | 'enabledTokens'>>) =>
       call<Wallet>('wallets:update', id, patch),
-    remove: (id: string) => call<boolean>('wallets:remove', id)
+    remove: (id: string) => call<boolean>('wallets:remove', id),
+    /** Read-only: for wallets like Exodus that can't connect. */
+    track: (input: { address: string; label?: string; providerId?: string | null }) => call<Wallet>('wallets:track', input)
   },
   connections: {
     list: () => call<WalletConnection[]>('connections:list'),

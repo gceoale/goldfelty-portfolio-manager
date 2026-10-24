@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Wallet as EthersWallet } from 'ethers'
 import { Store } from '../src/main/store.ts'
-import { registerConnectionAccounts, detachConnection } from '../src/main/wallets.ts'
+import { registerConnectionAccounts, detachConnection, trackAddress } from '../src/main/wallets.ts'
 import {
   routesForSymbol,
   receiveRoutes,
@@ -202,4 +202,39 @@ test('a signer from ethers can stand in for a wallet when checking signatures', 
   const w = EthersWallet.createRandom()
   const text = 'Goldfelty account registration\nusername: a'
   assert.equal(await w.signMessage(text), await w.signMessage(Buffer.from(text, 'utf8')))
+})
+
+/* ---- wallets that can't connect ----------------------------------------- */
+
+test('an Exodus address can be tracked read-only, and never offered for sending or receiving', (t) => {
+  const store = openStore(t)
+  const w = trackAddress(store, { address: A.toLowerCase(), providerId: 'exodus-desktop' }, [1, 8453])
+  assert.equal(w.kind, 'readonly')
+  assert.equal(w.address, A, 'stored checksummed')
+  assert.equal(w.label, 'Exodus')
+  assert.equal(w.connectionId, null)
+  assert.match(w.note, /send and receive with Exodus/)
+  assert.deepEqual(routesForSymbol(store, reachable, [balance(w.id, 3)], 'ETH'), [])
+  assert.deepEqual(receiveRoutes(store, reachable, 'ETH'), [])
+})
+
+test('tracking refuses typos, duplicates, and unknown apps get a plain label', (t) => {
+  const store = openStore(t)
+  // Flip the case of one letter: mixed-case addresses carry a checksum in their case.
+  const i = A.indexOf('E')
+  const badChecksum = A.slice(0, i) + 'e' + A.slice(i + 1)
+  assert.throws(() => trackAddress(store, { address: badChecksum }, [1]), /valid address/)
+  assert.throws(() => trackAddress(store, { address: 'not an address' }, [1]), /valid address/)
+  const w = trackAddress(store, { address: B, label: '  Cold storage  ', providerId: 'made-up' }, [1])
+  assert.equal(w.label, 'Cold storage')
+  assert.equal(w.providerId, null)
+  assert.throws(() => trackAddress(store, { address: B.toLowerCase() }, [1]), /already in Goldfelty/)
+})
+
+test('connecting a tracked address later upgrades it in place', (t) => {
+  const store = openStore(t)
+  trackAddress(store, { address: A, providerId: 'exodus-desktop' }, [1])
+  registerConnectionAccounts(store, connection(), [1])
+  assert.equal(store.wallets.length, 1)
+  assert.equal(store.wallets[0].kind, 'browser')
 })

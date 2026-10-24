@@ -1,30 +1,22 @@
-## Goldfelty 1.1.1
+## Goldfelty 1.1.2
 
-A rebuilt app. Goldfelty no longer creates wallets: you connect the ones you
-already use, and they approve everything.
+**Exodus.** The Exodus desktop and phone apps don’t let other apps connect to
+them: Exodus ended WalletConnect and its dApp browser in 2026. Goldfelty now
+says so, and lets you track an Exodus address instead, so its balances count in
+your portfolio. Send from Exodus itself. Connect a wallet > Can’t connect >
+Exodus. “Another wallet” does the same for any other address.
 
-**New**
+The browser list is now labelled **Browser extensions**, and its Exodus entry
+is the Exodus Web3 Wallet extension, which is what it always was.
 
-- Connects to 33 browser wallets through Goldfelty's own local connection,
-  plus Frame on the desktop and any WalletConnect phone wallet.
-- A new interface that looks and behaves like a desktop app, in light and dark.
-- When several wallets hold a token, you choose which one sends it. Goldfelty
-  switches the wallet to the right network first, warns about lookalike
-  addresses, and checks the chain recorded what you approved.
-- Optional goldfelty.com account, proved by a signature from your wallet.
+Also: `SHA256SUMS.txt` now lists files under the names GitHub serves them as,
+so `shasum -c` checks the macOS and Windows downloads too.
 
-**Fees.** Goldfelty now takes a fee on tokens sent through it, currently 0.5%,
-shown before every send and approved in your wallet as its own transaction. See
-the [Terms](https://goldfelty.com/terms/).
-
-**Security.** Everything Goldfelty stores is now encrypted with your password.
-Electron 44, locked-down builds, and a full internal security review:
-[docs/SECURITY-AUDIT.md](https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
-
-**Upgrading from 1.0.** Unlock with your existing password. Addresses that 1.0
-created are kept as read-only; don't send anything to them. Your old encrypted
-vault is kept unchanged next to the new one. Wallets you had connected need
-connecting again.
+New in 1.1 (from 1.1.1): Goldfelty connects the wallets you already use
+instead of creating them, has a new desktop interface, encrypts everything it
+stores, and takes a fee on sends, shown before every send. See the
+[Terms](https://goldfelty.com/terms/) and the
+[security review](https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
 
 ## Which file do I download?
 

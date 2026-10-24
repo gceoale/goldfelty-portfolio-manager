@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { getAddress, isAddress } from 'ethers'
 import type { Store } from './store.ts'
 import { DEFAULT_CHAIN_IDS } from '../shared/chains.ts'
-import { REGISTRY_BY_ID } from '../shared/walletRegistry.ts'
+import { REGISTRY_BY_ID, TRACK_ONLY_BY_ID } from '../shared/walletRegistry.ts'
 import type { Wallet, WalletConnection } from '../shared/types.ts'
 
 /**
@@ -91,4 +91,48 @@ export function detachConnection(store: Store, connectionId: string): number {
     count++
   }
   return count
+}
+
+export class TrackError extends Error {
+  code = 'BAD_ADDRESS'
+}
+
+/**
+ * Track an address from a wallet that can't connect (Exodus, for one), so
+ * its balances count in the portfolio. Read-only: Goldfelty never offers it
+ * to send from or to receive into, because nothing here can sign for it and
+ * a typed address can't be proven to be the user's.
+ */
+export function trackAddress(
+  store: Store,
+  input: { address: string; label?: string; providerId?: string | null },
+  enabledChains: number[]
+): Wallet {
+  const raw = String(input.address ?? '').trim()
+  // A mixed-case address must carry a valid checksum, which catches most typos.
+  if (!isAddress(raw)) throw new TrackError('That isn’t a valid address. Copy it from the wallet rather than typing it.')
+  const address = getAddress(raw)
+  if (store.walletByAddress(address)) throw new TrackError('That address is already in Goldfelty.')
+  if (store.wallets.length >= MAX_WALLETS) throw new WalletLimitError()
+
+  const app = input.providerId ? TRACK_ONLY_BY_ID.get(input.providerId) : undefined
+  const providerName = app?.name ?? null
+  const label = String(input.label ?? '').trim().slice(0, 48) || providerName || 'Tracked address'
+  const wallet: Wallet = {
+    id: randomUUID(),
+    label,
+    kind: 'readonly',
+    address,
+    connectionId: null,
+    providerName,
+    providerId: app?.id ?? null,
+    chainIds: enabledChains.length ? enabledChains : [...DEFAULT_CHAIN_IDS],
+    enabledTokens: [],
+    color: app?.color ?? ACCENTS[store.wallets.length % ACCENTS.length],
+    createdAt: Date.now(),
+    archived: false,
+    note: `Tracked address. Goldfelty shows its balance; send and receive with ${providerName ?? 'the wallet that holds it'}.`
+  }
+  store.addWallet(wallet)
+  return wallet
 }

@@ -4,7 +4,7 @@ import type { Store } from './store.ts'
 import type { Prefs } from './prefs.ts'
 import { Vault, WeakPasswordError } from './vault.ts'
 import { scorePassword, MIN_PASSWORD_SCORE, WrongPasswordError } from './crypto.ts'
-import { MAX_WALLETS, detachConnection, registerConnectionAccounts } from './wallets.ts'
+import { MAX_WALLETS, detachConnection, registerConnectionAccounts, trackAddress } from './wallets.ts'
 import { loadPortfolio } from './portfolio.ts'
 import { executeTransfer, quoteTransfer, receiveRoutes, routesForSymbol, type Sender } from './transfers.ts'
 import {
@@ -422,6 +422,23 @@ export function registerIpc(runtime: Runtime): void {
     if (!updated) throw new InputError('That wallet no longer exists.')
     broadcast(runtime, 'portfolio:invalidate')
     return updated
+  })
+
+  handle('wallets:track', (input) => {
+    requireUnlocked(runtime)
+    touch()
+    const v = (input ?? {}) as Record<string, unknown>
+    const wallet = trackAddress(
+      store,
+      {
+        address: str(v.address, 64, 'address'),
+        label: v.label === undefined ? undefined : str(v.label, 48, 'name'),
+        providerId: v.providerId == null ? null : str(v.providerId, 64, 'wallet')
+      },
+      store.settings.enabledChains
+    )
+    broadcast(runtime, 'portfolio:invalidate')
+    return wallet
   })
 
   handle('wallets:remove', (walletId) => {

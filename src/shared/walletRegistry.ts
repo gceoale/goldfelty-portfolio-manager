@@ -29,6 +29,28 @@ export interface RegistryWallet {
 
 export const FRAME_ID = 'frame-desktop'
 
+/**
+ * Wallet apps that don't let other apps connect to them at all, so nothing
+ * can ask them to sign. Goldfelty can still track their addresses, read-only:
+ * balances show in the portfolio, and sending happens in the wallet itself.
+ *
+ * Exodus ended WalletConnect support and its dApp browser in 2026, and its
+ * desktop app has never had a way for other apps to connect.
+ */
+export interface TrackOnlyWallet {
+  id: string
+  name: string
+  color: string
+  /** Why it can't connect, shown in the connect sheet. */
+  why: string
+}
+
+export const TRACK_ONLY_WALLETS: TrackOnlyWallet[] = [
+  { id: 'exodus-desktop', name: 'Exodus', color: '#1f2033', why: 'Exodus doesn’t let other apps connect to it, on any computer or phone.' }
+]
+
+export const TRACK_ONLY_BY_ID = new Map(TRACK_ONLY_WALLETS.map((w) => [w.id, w]))
+
 export const WALLET_REGISTRY: RegistryWallet[] = [
   { id: 'metamask', name: 'MetaMask', rdns: ['io.metamask', 'io.metamask.flask'], aliases: ['metamask', 'metamask flask'], color: '#f6851b', homepage: 'https://metamask.io' },
   { id: 'rabby', name: 'Rabby', rdns: ['io.rabby'], aliases: ['rabby', 'rabby wallet'], color: '#7084ff', homepage: 'https://rabby.io' },
@@ -42,7 +64,7 @@ export const WALLET_REGISTRY: RegistryWallet[] = [
   { id: 'frame-extension', name: 'Frame Companion', rdns: ['sh.frame'], aliases: ['frame', 'frame companion'], color: '#1c1b24', homepage: 'https://frame.sh' },
   { id: 'taho', name: 'Taho', rdns: ['xyz.taho'], aliases: ['taho'], color: '#d08e39', homepage: 'https://taho.xyz' },
   { id: 'enkrypt', name: 'Enkrypt', rdns: ['com.enkrypt'], aliases: ['enkrypt'], color: '#704fea', homepage: 'https://www.enkrypt.com' },
-  { id: 'exodus', name: 'Exodus', rdns: ['com.exodus.web3-wallet'], aliases: ['exodus', 'exodus web3 wallet'], color: '#1f2033', homepage: 'https://www.exodus.com' },
+  { id: 'exodus', name: 'Exodus Web3 Wallet', rdns: ['com.exodus.web3-wallet'], aliases: ['exodus', 'exodus web3 wallet'], color: '#1f2033', homepage: 'https://www.exodus.com' },
   { id: 'backpack', name: 'Backpack', rdns: ['app.backpack'], aliases: ['backpack'], color: '#e33e3f', homepage: 'https://backpack.app' },
   { id: 'bitget', name: 'Bitget Wallet', rdns: ['com.bitget.web3'], aliases: ['bitget wallet', 'bitkeep'], color: '#00f0ff', homepage: 'https://web3.bitget.com' },
   { id: 'uniswap', name: 'Uniswap Extension', rdns: ['org.uniswap.app'], aliases: ['uniswap extension', 'uniswap wallet', 'uniswap'], color: '#ff37c7', homepage: 'https://wallet.uniswap.org' },

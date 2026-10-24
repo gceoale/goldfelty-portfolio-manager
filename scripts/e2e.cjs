@@ -447,6 +447,20 @@ function makeWalletBackend() {
   await page.locator('.content').evaluate((el) => el.scrollTo(0, el.scrollHeight))
   await shot('13c-settings-end')
 
+  step('track an Exodus wallet, which can’t connect')
+  const exodusAddress = Wallet.createRandom().address
+  await page.locator('.source-heading').getByRole('button', { name: 'Connect a wallet' }).click()
+  await page.getByText('Can’t connect').waitFor()
+  await page.getByRole('button', { name: /^Exodus\s*Desktop and phone apps/ }).click()
+  await page.locator('#track-address').fill(exodusAddress.toLowerCase())
+  await shot('13d-track-exodus')
+  await page.getByRole('button', { name: 'Track', exact: true }).click()
+  await page.locator('.sidebar .wallets').getByText('Exodus').waitFor({ timeout: 10_000 })
+  await page.locator('.sidebar .wallets button', { hasText: 'Exodus' }).click()
+  await page.getByText(/send and receive with Exodus/).waitFor()
+  await shot('13e-exodus-wallet')
+  assert.ok((await page.locator('.wallet-head .mono').textContent()).includes(exodusAddress), 'stored checksummed')
+
   step('dark appearance')
   await page.evaluate(() => window.goldfelty.settings.update({ theme: 'dark' }))
   await page.getByRole('button', { name: 'Overview', exact: true }).click()

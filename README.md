@@ -14,7 +14,7 @@ every transfer and signature.
 
 **Browser extensions**, through Goldfelty's own connection: MetaMask, Rabby,
 Coinbase Wallet, Phantom, Brave Wallet, Trust Wallet, OKX Wallet, Rainbow,
-Zerion, Frame Companion, Taho, Enkrypt, Exodus, Backpack, Bitget Wallet,
+Zerion, Frame Companion, Taho, Enkrypt, Exodus Web3 Wallet, Backpack, Bitget Wallet,
 Uniswap Extension, Core, Talisman, SubWallet, Ronin Wallet, TokenPocket,
 Coin98, SafePal, Ctrl, OneKey, Magic Eden, Wigwam, Fordefi, Zeal, Ambire, Gate
 Wallet, Opera Wallet and Crypto.com Onchain. Any other extension that announces
@@ -25,6 +25,11 @@ GridPlus work through it.
 
 **Phone wallets**, over WalletConnect. This is the only connection that uses an
 outside relay, because a phone can't reach your computer directly.
+
+**Wallets that can't connect**, such as the Exodus desktop and phone apps
+(Exodus ended WalletConnect and its dApp browser in 2026): Goldfelty tracks
+their addresses read-only, so the balances count, and you send from the
+wallet itself.
 
 Networks: Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Avalanche,
 plus Sepolia for testing.
