@@ -55,7 +55,25 @@ export async function deriveKey(password: string, salt: Buffer, params = KDF_PAR
   })
 }
 
+/**
+ * KDF parameters come from the vault file, so they are checked before use. A
+ * file edited to N=2 would otherwise turn every later password change into
+ * a near-free guess for whoever edited it, and a huge N would hang the app.
+ */
+export function assertSaneKdf(kdf: KdfDescriptor): void {
+  const salt = Buffer.from(String(kdf?.salt ?? ''), 'base64')
+  const ok =
+    kdf?.name === 'scrypt' &&
+    Number.isInteger(kdf.N) && kdf.N >= 2 ** 15 && kdf.N <= 2 ** 20 && (kdf.N & (kdf.N - 1)) === 0 &&
+    kdf.r === 8 &&
+    Number.isInteger(kdf.p) && kdf.p >= 1 && kdf.p <= 4 &&
+    kdf.keyLength === 32 &&
+    salt.length >= 16
+  if (!ok) throw new CorruptVaultError()
+}
+
 export async function deriveKeyFor(password: string, kdf: KdfDescriptor): Promise<Buffer> {
+  assertSaneKdf(kdf)
   return scrypt(password.normalize('NFKC'), Buffer.from(kdf.salt, 'base64'), kdf.keyLength, {
     N: kdf.N,
     r: kdf.r,
@@ -158,3 +176,48 @@ export function scorePassword(password: string): PasswordStrength {
 
 /** Minimum bar enforced at onboarding and when changing the password. */
 export const MIN_PASSWORD_SCORE = 2
+
+/**
+ * Sealing for data files encrypted under a key that already exists, as
+ * opposed to one stretched from a password. The local store uses this with
+ * the data key the vault hands over on unlock.
+ */
+export interface SealedBlob {
+  version: 1
+  cipher: 'aes-256-gcm'
+  iv: string
+  authTag: string
+  ciphertext: string
+}
+
+export class CorruptDataError extends Error {
+  code = 'CORRUPT_DATA'
+  constructor() {
+    super('Goldfelty’s data file is damaged and could not be read.')
+  }
+}
+
+export function seal(key: Buffer, plaintext: string): SealedBlob {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  return {
+    version: 1,
+    cipher: 'aes-256-gcm',
+    iv: iv.toString('base64'),
+    authTag: cipher.getAuthTag().toString('base64'),
+    ciphertext: ciphertext.toString('base64')
+  }
+}
+
+export function unseal(key: Buffer, blob: SealedBlob): string {
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(blob.iv, 'base64'))
+  decipher.setAuthTag(Buffer.from(blob.authTag, 'base64'))
+  try {
+    return Buffer.concat([decipher.update(Buffer.from(blob.ciphertext, 'base64')), decipher.final()]).toString('utf8')
+  } catch {
+    // The key comes from the vault, so a tag failure here means the file was
+    // altered or damaged, not that anybody typed something wrong.
+    throw new CorruptDataError()
+  }
+}

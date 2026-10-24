@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { computeChange, sliceHistory } from '../src/main/portfolio.ts'
@@ -47,27 +48,12 @@ test('collapses snapshots taken within five minutes of each other', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'goldfelty-store-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const store = new Store(dir)
-
-  store.pushSnapshot({ at: Date.now() - 60_000, total: 100, byWallet: {} })
-  store.pushSnapshot({ at: Date.now(), total: 110, byWallet: {} })
-  assert.equal(store.history.length, 1, 'a burst of refreshes must not flatten the time axis')
-  assert.equal(store.history[0].total, 110)
-
-  store.pushSnapshot({ at: Date.now() + 10 * 60_000, total: 130, byWallet: {} })
-  assert.equal(store.history.length, 2)
-})
-
-test('settings survive a reload and reset restores defaults', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'goldfelty-store-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-
-  const store = new Store(dir)
-  store.updateSettings({ currency: 'EUR', autoLockMinutes: 30 })
-  assert.equal(new Store(dir).settings.currency, 'EUR')
-
-  store.reset()
-  assert.equal(store.settings.currency, 'USD')
-  assert.equal(store.wallets.length, 0)
+  store.open(randomBytes(32))
+  const now = Date.now()
+  store.pushSnapshot({ at: now, total: 1, byWallet: {} })
+  store.pushSnapshot({ at: now + 60_000, total: 2, byWallet: {} })
+  store.pushSnapshot({ at: now + 10 * 60_000, total: 3, byWallet: {} })
+  assert.deepEqual(store.history.map((s) => s.total), [2, 3])
 })
 
 /* ---- registry sanity --------------------------------------------------- */

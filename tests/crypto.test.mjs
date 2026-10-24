@@ -13,7 +13,8 @@ import {
 } from '../src/main/crypto.ts'
 
 // Onboarding derives a key per attempt, so keep the test params cheap.
-const FAST = { N: 1024, r: 8, p: 1, keyLength: 32 }
+// The lowest cost a vault file may declare; anything cheaper is refused.
+const FAST = { N: 32768, r: 8, p: 1, keyLength: 32 }
 
 async function blobFor(password, plaintext) {
   const salt = newSalt()

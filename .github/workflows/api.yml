@@ -1,0 +1,117 @@
+name: Deploy account API
+
+# Puts api.goldfelty.com live on Cloudflare Workers. Needs two repository
+# secrets, CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (see api/README.md
+# for the token's permissions). Without them this run explains what is
+# missing and stops, rather than failing.
+
+on:
+  push:
+    branches: [main]
+    paths: ['api/**', '.github/workflows/api.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test and deploy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Check for Cloudflare credentials
+        id: creds
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            {
+              echo "### Account API not deployed"
+              echo "Add the repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID,"
+              echo "then run this workflow again. api/README.md lists the token permissions."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find or create the database
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          find_id() {
+            npx wrangler d1 list --json | node -e '
+              const list = JSON.parse(require("fs").readFileSync(0, "utf8"));
+              const db = list.find((d) => d.name === "goldfelty-accounts");
+              if (db) process.stdout.write(db.uuid);
+            '
+          }
+          ID="$(find_id)"
+          if [ -z "$ID" ]; then
+            npx wrangler d1 create goldfelty-accounts
+            ID="$(find_id)"
+          fi
+          if ! echo "$ID" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "Could not find or create the goldfelty-accounts database." >&2
+            exit 1
+          fi
+          # Only in this checkout. The id is not secret, but it is per account.
+          sed -i "s/^database_id = .*/database_id = \"$ID\"/" wrangler.toml
+          grep '^database_id' wrangler.toml
+
+      - name: Apply the schema
+        if: steps.creds.outputs.ready == 'true'
+        # Every statement is CREATE ... IF NOT EXISTS, so re-running is safe.
+        run: npx wrangler d1 execute goldfelty-accounts --remote --file=./schema.sql
+
+      - name: Deploy the Worker
+        if: steps.creds.outputs.ready == 'true'
+        run: npx wrangler deploy
+
+      # The owner dashboard at goldfelty.com/admin needs this. Without the
+      # GOLDFELTY_ADMIN_TOKEN secret, stats stay switched off.
+      - name: Set the admin token
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          ADMIN_TOKEN: ${{ secrets.GOLDFELTY_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "No GOLDFELTY_ADMIN_TOKEN secret: the owner dashboard stays off." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [ "${#ADMIN_TOKEN}" -lt 32 ]; then
+            echo "GOLDFELTY_ADMIN_TOKEN must be at least 32 characters." >&2
+            exit 1
+          else
+            printf '%s' "$ADMIN_TOKEN" | npx wrangler secret put ADMIN_TOKEN
+          fi
+
+      - name: Check it answers
+        if: steps.creds.outputs.ready == 'true'
+        # A new custom domain can take a minute or two for its certificate.
+        run: |
+          for i in $(seq 1 18); do
+            if curl -fsS https://api.goldfelty.com/health | grep -q '"ok":true'; then
+              echo "api.goldfelty.com is up." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Deployed, but api.goldfelty.com did not answer within 3 minutes. Check the custom domain in Cloudflare." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1

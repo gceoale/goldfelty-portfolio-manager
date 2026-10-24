@@ -3,198 +3,140 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Goldfelty — every wallet, one place</title>
-<meta name="description" content="A desktop portfolio manager for the wallets you already use. Connect MetaMask, Rainbow, Phantom and others, watch them in one place, send and receive across seven networks." />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'; object-src 'none'" />
+<meta name="referrer" content="strict-origin-when-cross-origin" />
+<title>Goldfelty Portfolio Manager: every wallet you use, in one desktop app</title>
+<meta name="description" content="A free desktop app for macOS, Windows and Linux that shows the crypto wallets you already use in one place. Connect MetaMask, Rabby, Phantom, Coinbase Wallet, Frame and 30 more, then send and receive across seven networks." />
+<link rel="canonical" href="https://goldfelty.com/" />
+<meta property="og:type" content="website" />
 <meta property="og:title" content="Goldfelty Portfolio Manager" />
-<meta property="og:description" content="Every wallet, one place. macOS, Windows and Linux." />
-<meta property="og:url" content="https://goldfelty.com" />
-<link rel="icon" href="icon.png" />
-<style>
-  :root {
-    --brass: #9d7422;
-    --bg: #f7f4ed;
-    --surface: #fffdf8;
-    --rule: #e1d9c9;
-    --ink: #1b1813;
-    --ink-2: #5b5346;
-    --ink-3: #8b8273;
-    --display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
-    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --brass: #c0912f; --bg: #100f0d; --surface: #171512;
-      --rule: #2a251e; --ink: #f2ece1; --ink-2: #a89f91; --ink-3: #6f675c;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
-  header { padding: 40px 0 0; }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .mark {
-    width: 28px; height: 28px; border: 1px solid var(--brass); border-radius: 2px;
-    display: flex; align-items: center; justify-content: center; font-family: var(--display);
-    color: var(--brass); font-size: 17px; line-height: 1; flex: 0 0 auto;
-  }
-  .brand b { font-family: var(--display); font-weight: 600; font-size: 16px; }
-  .brand span { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: -2px; }
-  h1 { font-family: var(--display); font-weight: 400; font-size: 46px; line-height: 1.08; letter-spacing: -.015em; margin: 44px 0 14px; }
-  .lede { font-size: 18px; color: var(--ink-2); max-width: 30em; margin: 0 0 32px; }
-  .dl { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px;
-    border-radius: 3px; text-decoration: none; font-weight: 500; font-size: 14.5px;
-    background: var(--brass); color: var(--bg); border: 1px solid var(--brass);
-  }
-  .btn.alt { background: none; color: var(--ink); border-color: var(--rule); }
-  .btn:hover { filter: brightness(1.08); }
-  .note { font-size: 13px; color: var(--ink-3); margin-top: 12px; }
-  .note code { font-family: var(--mono); font-size: 12px; background: var(--surface); padding: 2px 5px; border-radius: 2px; border: 1px solid var(--rule); }
-  section { border-top: 1px solid var(--rule); margin-top: 52px; padding-top: 36px; }
-  h2 { font-family: var(--display); font-weight: 600; font-size: 21px; margin: 0 0 16px; }
-  .feat { display: grid; gap: 22px; }
-  .feat h3 { font-size: 15px; margin: 0 0 4px; }
-  .feat p { margin: 0; color: var(--ink-2); font-size: 15px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
-  td, th { text-align: left; padding: 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
-  td a { color: var(--brass); }
-  .warn { border-left: 2px solid var(--brass); padding: 2px 0 2px 16px; color: var(--ink-2); font-size: 15px; }
-  footer { border-top: 1px solid var(--rule); margin-top: 52px; padding: 24px 0 56px; color: var(--ink-3); font-size: 13.5px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  footer a { color: var(--ink-2); }
-</style>
+<meta property="og:description" content="Every wallet you use, in one desktop app. macOS, Windows and Linux." />
+<meta property="og:url" content="https://goldfelty.com/" />
+<meta property="og:image" content="https://goldfelty.com/screenshot.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="/icon.png" />
+<link rel="stylesheet" href="/style.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Goldfelty Portfolio Manager",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "macOS, Windows, Linux",
+  "softwareVersion": "1.1.1",
+  "url": "https://goldfelty.com/",
+  "downloadUrl": "https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/releases/latest",
+  "screenshot": "https://goldfelty.com/screenshot.png",
+  "description": "A desktop portfolio manager for the crypto wallets you already use. Connects MetaMask, Rabby, Phantom, Coinbase Wallet, Frame and 30 more without holding your keys.",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div class="brand">
-      <span class="mark">G</span>
-      <div><b>Goldfelty</b><span>Portfolio Manager</span></div>
-    </div>
+  <header class="top">
+    <a class="brand" href="/"><span class="mark">G</span> Goldfelty</a>
+    <nav>
+      <a href="#wallets">Wallets</a>
+      <a href="#download">Download</a>
+      <a href="/terms/">Terms</a>
+      <a href="/privacy/">Privacy</a>
+    </nav>
   </header>
 
-  <h1>Every wallet, one place.</h1>
+  <h1>Every wallet you use, in one desktop app.</h1>
   <p class="lede">
-    A desktop app for the wallets you already use. Connect MetaMask, Rainbow, Phantom or
-    Coinbase, watch them together, and send across seven networks without juggling tabs.
+    Goldfelty shows what you hold across MetaMask, Rabby, Phantom, Frame, your phone wallet and the
+    rest, what it’s worth, and how that changes. Send and receive from one place. Your wallets keep
+    their keys and approve every transfer.
   </p>
-
-  <div class="dl">
+  <div class="actions">
     <a class="btn" id="primary" href="https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/releases/latest">Download</a>
-    <a class="btn alt" href="https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/releases/latest">All downloads</a>
+    <a class="btn plain" href="#download">All platforms</a>
   </div>
-  <p class="note" id="platform-note"></p>
+  <p class="note" id="platform-note">Free for macOS, Windows and Linux.</p>
+
+  <img class="shot" src="/screenshot.png" width="1240" height="800" alt="Goldfelty’s Overview: total value, a chart of the last day, and holdings across wallets" />
 
   <section>
-    <h2>What it does</h2>
-    <div class="feat">
+    <div class="cols">
       <div>
-        <h3>Connect what you already have</h3>
-        <p>WalletConnect reaches wallets on your phone or this machine. Browser extensions connect through a page served on loopback. Or let Goldfelty make new smart accounts from one recovery phrase.</p>
+        <h3>Connect, don’t create</h3>
+        <p>Goldfelty never makes a wallet or sees a key. It connects to the ones you have, and each asks you before it shares an account.</p>
       </div>
       <div>
-        <h3>One view, many chains</h3>
-        <p>Ethereum, Base, Arbitrum, OP, Polygon, BNB and Avalanche. Balances pooled by token, growth over time, allocation at a glance.</p>
+        <h3>Its own connections</h3>
+        <p>Browser wallets are reached through a tab on your own computer, and Frame over its local connection. Only phone wallets go through WalletConnect, because a phone can’t reach your computer directly.</p>
       </div>
       <div>
-        <h3>You pick the route</h3>
-        <p>When several wallets hold the same token, Goldfelty asks which one pays instead of guessing. Same on the receiving side, before an address is ever copied.</p>
+        <h3>You choose the wallet</h3>
+        <p>When several wallets hold the same token, Goldfelty asks which one sends it. When receiving, you pick the wallet and network before an address is shown.</p>
       </div>
       <div>
-        <h3>Keys stay where they are</h3>
-        <p>Connected wallets sign in their own app. Wallets made here are encrypted with scrypt and AES-256-GCM, and the recovery phrase is shown exactly once.</p>
+        <h3>Checked before and after</h3>
+        <p>It switches your wallet to the right network before asking, warns about lookalike addresses, and compares what the chain recorded with what you approved.</p>
       </div>
     </div>
   </section>
 
-  <section>
-    <h2>Downloads</h2>
+  <section id="wallets">
+    <h2>Wallets it connects to</h2>
+    <p class="muted">These 33 browser wallets, plus any other that announces itself the standard way (EIP-6963). Frame on the desktop, with Ledger, Trezor and GridPlus through it. Any phone wallet that supports WalletConnect.</p>
+    <ul class="wallets">
+      <li>MetaMask</li><li>Rabby</li><li>Coinbase Wallet</li><li>Phantom</li><li>Brave Wallet</li>
+      <li>Trust Wallet</li><li>OKX Wallet</li><li>Rainbow</li><li>Zerion</li><li>Frame Companion</li>
+      <li>Taho</li><li>Enkrypt</li><li>Exodus</li><li>Backpack</li><li>Bitget Wallet</li>
+      <li>Uniswap Extension</li><li>Core</li><li>Talisman</li><li>SubWallet</li><li>Ronin Wallet</li>
+      <li>TokenPocket</li><li>Coin98</li><li>SafePal</li><li>Ctrl</li><li>OneKey</li>
+      <li>Magic Eden</li><li>Wigwam</li><li>Fordefi</li><li>Zeal</li><li>Ambire</li>
+      <li>Gate Wallet</li><li>Opera Wallet</li><li>Crypto.com Onchain</li>
+    </ul>
+    <p class="note">Networks: Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Avalanche.</p>
+  </section>
+
+  <section id="download">
+    <h2>Download</h2>
     <table>
       <tr><th>Platform</th><th>File</th></tr>
-      <tr><td>macOS, Apple silicon</td><td><code>-arm64.dmg</code></td></tr>
-      <tr><td>macOS, Intel</td><td><code>-x64.dmg</code></td></tr>
-      <tr><td>Windows, Intel/AMD</td><td><code>-x64-setup.exe</code></td></tr>
-      <tr><td>Windows on ARM</td><td><code>-arm64-setup.exe</code></td></tr>
-      <tr><td>Linux</td><td>AppImage, deb, rpm, tar.gz — x64 and arm64</td></tr>
+      <tr><td>macOS, Apple silicon</td><td><code>…-arm64.dmg</code></td></tr>
+      <tr><td>macOS, Intel</td><td><code>…-x64.dmg</code></td></tr>
+      <tr><td>Windows</td><td><code>…-x64-setup.exe</code>, or <code>…-arm64-setup.exe</code> for Windows on ARM</td></tr>
+      <tr><td>Linux</td><td>AppImage, deb, rpm and tar.gz, for x64 and arm64</td></tr>
     </table>
-    <p class="note">Builds are unsigned. On macOS, after moving the app to Applications:<br>
-      <code>xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"</code></p>
+    <p class="note">
+      Each release lists SHA-256 checksums in <code>SHA256SUMS.txt</code>. Builds are not yet signed by Apple or
+      Microsoft. On macOS, after moving the app to Applications, run
+      <code>xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"</code>.
+    </p>
   </section>
 
   <section>
-    <h2>Before you put money in it</h2>
-    <p class="warn">
-      Goldfelty has not had an independent security audit, and the builds are not signed by
-      Apple or Microsoft. It is worth a look and worth testing; it is not yet worth your
-      savings. The source is public — read it before you trust it.
+    <h2>What it costs</h2>
+    <p>
+      The app is free. Goldfelty takes a fee on tokens you send through it, currently <strong id="fee-rate">0.5%</strong>,
+      paid on top of the amount you send. The fee is shown on the review screen before anything is sent, and your
+      wallet asks you to approve it as its own transaction. The owner of goldfelty.com can set the fee anywhere from
+      0% to 10%; see the <a href="/terms/">Terms</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2>Before you rely on it</h2>
+    <p class="callout">
+      Goldfelty hasn’t had an independent security audit, and the builds aren’t signed by Apple or Microsoft yet. The
+      source is public; read it before you trust it with much.
     </p>
   </section>
 
   <footer>
-    <span>© <span id="year">2026</span> Goldfelty</span>
+    <span>© 2026 Goldfelty</span>
     <span>
+      <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a> ·
       <a href="https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager">Source</a> ·
-      <a href="https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/issues">Issues</a> ·
       <a href="mailto:support@goldfelty.com">support@goldfelty.com</a>
     </span>
   </footer>
 </div>
-
-<script>
-(function () {
-  document.getElementById('year').textContent = new Date().getFullYear();
-
-  var REPO = 'gceoalexyt-ops/goldfelty-portfolio-manager';
-  var note = document.getElementById('platform-note');
-  var primary = document.getElementById('primary');
-
-  // Guess the platform so the main button is the right file. userAgentData is
-  // the only way to tell Apple silicon from Intel in a browser, and it is not
-  // everywhere, so both Mac builds stay one click away regardless.
-  function guess() {
-    var ua = navigator.userAgent;
-    var plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
-    var arm = /arm|aarch64/i.test(ua) || /arm/i.test(plat);
-    if (/Mac|Darwin/i.test(plat) || /Mac OS X/i.test(ua)) return { os: 'mac', arm: arm };
-    if (/Win/i.test(plat) || /Windows/i.test(ua)) return { os: 'win', arm: arm };
-    if (/Linux|X11/i.test(plat) || /Linux/i.test(ua)) return { os: 'linux', arm: arm };
-    return null;
-  }
-
-  function pick(assets, g) {
-    var want;
-    if (g.os === 'mac') want = g.arm ? /-arm64\.dmg$/ : /-x64\.dmg$/;
-    else if (g.os === 'win') want = g.arm ? /-arm64-setup\.exe$/ : /-x64-setup\.exe$/;
-    else want = g.arm ? /-arm64\.AppImage$/ : /-x86_64\.AppImage$/;
-    for (var i = 0; i < assets.length; i++) if (want.test(assets[i].name)) return assets[i];
-    return null;
-  }
-
-  var g = guess();
-  fetch('https://api.github.com/repos/' + REPO + '/releases/latest')
-    .then(function (r) { return r.json(); })
-    .then(function (rel) {
-      if (!rel || !rel.assets) return;
-      var label = { mac: 'macOS', win: 'Windows', linux: 'Linux' };
-      var asset = g && pick(rel.assets, g);
-      if (asset) {
-        primary.href = asset.browser_download_url;
-        primary.textContent = 'Download for ' + label[g.os] + (g.arm ? ' (ARM)' : '');
-        note.innerHTML = rel.tag_name + ' · ' + Math.round(asset.size / 1048576) + ' MB · ' +
-          'not what you need? <a href="' + rel.html_url + '">see every build</a>';
-      } else {
-        note.innerHTML = rel.tag_name + ' · <a href="' + rel.html_url + '">choose a build</a>';
-      }
-    })
-    .catch(function () {
-      note.textContent = 'Could not reach GitHub. Use the all-downloads link.';
-    });
-})();
-</script>
+<script src="/main.js"></script>
 </body>
 </html>

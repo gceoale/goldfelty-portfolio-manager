@@ -104,3 +104,21 @@ export function contrastText(hex: string): string {
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
   return luminance > 0.62 ? '#14161c' : '#ffffff'
 }
+
+/** An address in groups of four, which is how people actually compare them. */
+export function groupedAddress(address: string): string[] {
+  const body = address.startsWith('0x') ? address.slice(2) : address
+  const groups = ['0x']
+  for (let i = 0; i < body.length; i += 4) groups.push(body.slice(i, i + 4))
+  return groups
+}
+
+/** An axis label fitted to how much time the chart spans. */
+export function shortDate(timestamp: number, spanMs: number): string {
+  const d = new Date(timestamp)
+  const day = 86_400_000
+  if (spanMs <= 1.5 * day) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (spanMs <= 5 * day) return d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric' })
+  if (spanMs <= 300 * day) return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+}

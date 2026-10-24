@@ -1,7 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, renameSync, chmodSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, renameSync, chmodSync, mkdirSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { HDNodeWallet, Mnemonic, Wallet as EthWallet } from 'ethers'
 import {
   deriveKey,
   deriveKeyFor,
@@ -15,20 +14,38 @@ import {
   type EncryptedBlob,
   type KdfDescriptor
 } from './crypto.ts'
-import type { RecoveryMaterial } from '../shared/types.ts'
 
-/** BIP-44 account root. Owner key for wallet *i* is `${BASE_PATH}/${i}`. */
-export const BASE_PATH = "m/44'/60'/0'/0"
+/**
+ * The password vault.
+ *
+ * Goldfelty holds no wallet keys: every wallet is connected, and signs in its
+ * own app. What the password protects is what Goldfelty knows about you —
+ * which addresses you hold, what they are worth, what you have sent. That
+ * lives in an encrypted store, and this vault holds the random key for it,
+ * wrapped under a key stretched from the password with scrypt.
+ *
+ * Version 1 of the vault held a recovery phrase for wallets the app created
+ * itself. Unlocking one of those migrates it: the original file is copied
+ * aside untouched, still encrypted under the same password, and replaced with
+ * a version 2 vault. Nothing that could move funds is ever deleted.
+ */
 
-interface VaultPayload {
+interface PayloadV1 {
   mnemonic: string
   createdAt: number
+}
+
+interface PayloadV2 {
+  version: 2
+  dataKey: string
+  createdAt: number
+  migratedFromV1?: boolean
 }
 
 export class VaultLockedError extends Error {
   code = 'LOCKED'
   constructor() {
-    super('The vault is locked.')
+    super('Goldfelty is locked.')
   }
 }
 
@@ -39,140 +56,109 @@ export class WeakPasswordError extends Error {
   }
 }
 
-/**
- * Owns all secret material for the app. The decrypted mnemonic lives here, in
- * the main process, and is never sent over IPC; the renderer only ever sees
- * addresses. Everything that needs a signature asks this class for one.
- */
+export interface UnlockResult {
+  /** Set when this unlock converted a version 1 vault. */
+  migratedFromV1: boolean
+  backupPath: string | null
+}
+
 export class Vault {
-  private readonly file: string
-  private mnemonic: string | null = null
-  private unlockedAt = 0
-  /** Consumed by the one-and-only recovery reveal during onboarding. */
-  private revealTicket: string | null = null
+  readonly path: string
+  readonly backupPath: string
+  private dataKey: Buffer | null = null
 
   constructor(dataDir: string) {
     mkdirSync(dataDir, { recursive: true })
-    this.file = join(dataDir, 'vault.json')
-  }
-
-  get path(): string {
-    return this.file
+    this.path = join(dataDir, 'vault.json')
+    this.backupPath = join(dataDir, 'vault.v1-backup.json')
   }
 
   exists(): boolean {
-    return existsSync(this.file)
+    return existsSync(this.path)
   }
 
   get isLocked(): boolean {
-    return this.mnemonic === null
+    return this.dataKey === null
   }
 
-  get unlockedSince(): number {
-    return this.unlockedAt
+  /** The data key. Only available while unlocked, and only to the main process. */
+  key(): Buffer {
+    if (!this.dataKey) throw new VaultLockedError()
+    return this.dataKey
   }
 
   private read(): EncryptedBlob {
-    return JSON.parse(readFileSync(this.file, 'utf8')) as EncryptedBlob
+    return JSON.parse(readFileSync(this.path, 'utf8')) as EncryptedBlob
   }
 
   private write(blob: EncryptedBlob): void {
-    // Write to a sibling then rename: a crash mid-write must never leave the
-    // user with a half-written vault and an unrecoverable seed.
-    const tmp = `${this.file}.tmp`
+    // Temp file and rename, so a crash mid-write cannot leave a half vault.
+    const tmp = `${this.path}.tmp`
     writeFileSync(tmp, JSON.stringify(blob, null, 2), { mode: 0o600 })
-    renameSync(tmp, this.file)
+    renameSync(tmp, this.path)
     try {
-      chmodSync(this.file, 0o600)
+      chmodSync(this.path, 0o600)
     } catch {
-      // Windows has no POSIX mode bits; ACL inheritance from the user data
-      // directory covers it there.
+      // No POSIX modes on Windows; the user data folder's ACLs cover it.
     }
   }
 
-  /**
-   * Create the vault. Returns the recovery material — the only time it is ever
-   * produced — along with a ticket the UI must hand back to confirm the backup.
-   */
-  async create(password: string, importedMnemonic?: string): Promise<{ recovery: RecoveryMaterial; ticket: string }> {
-    if (this.exists()) throw new Error('A vault already exists on this computer.')
-    const strength = scorePassword(password)
-    if (strength.score < MIN_PASSWORD_SCORE) throw new WeakPasswordError(strength.problems)
-
-    const phrase = importedMnemonic
-      ? Mnemonic.fromPhrase(importedMnemonic.trim().replace(/\s+/g, ' ')).phrase
-      : Mnemonic.fromEntropy(randomBytes(32)).phrase
-
+  private async seal(password: string, payload: PayloadV2): Promise<void> {
     const salt = newSalt()
     const kdf: KdfDescriptor = { name: 'scrypt', ...KDF_PARAMS, salt: salt.toString('base64') }
     const key = await deriveKey(password, salt)
     try {
-      const payload: VaultPayload = { mnemonic: phrase, createdAt: Date.now() }
       this.write(encryptWithKey(key, JSON.stringify(payload), kdf))
     } finally {
       wipe(key)
     }
-
-    this.mnemonic = phrase
-    this.unlockedAt = Date.now()
-    this.revealTicket = randomBytes(24).toString('hex')
-
-    const owner = this.deriveOwner(0)
-    return {
-      recovery: {
-        mnemonic: phrase,
-        privateKey: owner.privateKey,
-        ownerAddress: owner.address,
-        derivationPath: `${BASE_PATH}/0`
-      },
-      ticket: this.revealTicket
-    }
   }
 
-  /** Re-issue the recovery material during onboarding only. The ticket burns on use. */
-  revealOnce(ticket: string): RecoveryMaterial {
-    if (!this.revealTicket || ticket !== this.revealTicket) {
-      throw new Error('Recovery material can only be shown while setting up your account.')
-    }
-    if (!this.mnemonic) throw new VaultLockedError()
-    const owner = this.deriveOwner(0)
-    return {
-      mnemonic: this.mnemonic,
-      privateKey: owner.privateKey,
-      ownerAddress: owner.address,
-      derivationPath: `${BASE_PATH}/0`
-    }
+  async create(password: string): Promise<void> {
+    if (this.exists()) throw new Error('Goldfelty is already set up on this computer.')
+    const strength = scorePassword(password)
+    if (strength.score < MIN_PASSWORD_SCORE) throw new WeakPasswordError(strength.problems)
+
+    const dataKey = randomBytes(32)
+    await this.seal(password, { version: 2, dataKey: dataKey.toString('base64'), createdAt: Date.now() })
+    this.dataKey = dataKey
   }
 
-  /** Called once the user confirms the backup. After this the reveal is gone for good. */
-  closeReveal(): void {
-    this.revealTicket = null
-  }
-
-  get revealIsOpen(): boolean {
-    return this.revealTicket !== null
-  }
-
-  async unlock(password: string): Promise<void> {
-    if (!this.exists()) throw new Error('No vault on this computer yet.')
+  async unlock(password: string): Promise<UnlockResult> {
+    if (!this.exists()) throw new Error('Goldfelty is not set up on this computer yet.')
     const blob = this.read()
     const key = await deriveKeyFor(password, blob.kdf)
+    let payload: PayloadV1 | PayloadV2
     try {
-      const payload = JSON.parse(decryptWithKey(key, blob)) as VaultPayload
-      this.mnemonic = payload.mnemonic
-      this.unlockedAt = Date.now()
+      payload = JSON.parse(decryptWithKey(key, blob)) as PayloadV1 | PayloadV2
     } finally {
       wipe(key)
     }
+
+    if ('version' in payload && payload.version === 2) {
+      this.dataKey = Buffer.from(payload.dataKey, 'base64')
+      return { migratedFromV1: false, backupPath: null }
+    }
+
+    // A version 1 vault. Keep the original exactly as it was, then replace it.
+    if (!existsSync(this.backupPath)) copyFileSync(this.path, this.backupPath)
+    const dataKey = randomBytes(32)
+    await this.seal(password, {
+      version: 2,
+      dataKey: dataKey.toString('base64'),
+      createdAt: (payload as PayloadV1).createdAt ?? Date.now(),
+      migratedFromV1: true
+    })
+    this.dataKey = dataKey
+    return { migratedFromV1: true, backupPath: this.backupPath }
   }
 
   lock(): void {
-    this.mnemonic = null
-    this.unlockedAt = 0
-    this.revealTicket = null
+    wipe(this.dataKey)
+    this.dataKey = null
   }
 
-  /** Verify a password without changing lock state — used to gate sending. */
+  /** Check a password without changing lock state. */
   async verify(password: string): Promise<boolean> {
     if (!this.exists()) return false
     const blob = this.read()
@@ -187,45 +173,19 @@ export class Vault {
     }
   }
 
+  /** Re-wrap the same data key under a new password. The store is untouched. */
   async changePassword(currentPassword: string, nextPassword: string): Promise<void> {
     const blob = this.read()
     const currentKey = await deriveKeyFor(currentPassword, blob.kdf)
-    let payload: VaultPayload
+    let payload: PayloadV2
     try {
-      payload = JSON.parse(decryptWithKey(currentKey, blob)) as VaultPayload
+      payload = JSON.parse(decryptWithKey(currentKey, blob)) as PayloadV2
     } finally {
       wipe(currentKey)
     }
+    if (payload.version !== 2) throw new Error('Unlock Goldfelty once before changing the password.')
     const strength = scorePassword(nextPassword)
     if (strength.score < MIN_PASSWORD_SCORE) throw new WeakPasswordError(strength.problems)
-
-    const salt = newSalt()
-    const kdf: KdfDescriptor = { name: 'scrypt', ...KDF_PARAMS, salt: salt.toString('base64') }
-    const nextKey = await deriveKey(nextPassword, salt)
-    try {
-      this.write(encryptWithKey(nextKey, JSON.stringify(payload), kdf))
-    } finally {
-      wipe(nextKey)
-    }
-  }
-
-  /** The EOA that owns the smart account at BIP-44 index `index`. */
-  deriveOwner(index: number): HDNodeWallet {
-    if (!this.mnemonic) throw new VaultLockedError()
-    if (!Number.isInteger(index) || index < 0 || index > 0x7fffffff) {
-      throw new Error(`Invalid derivation index ${index}`)
-    }
-    return HDNodeWallet.fromPhrase(this.mnemonic, '', `${BASE_PATH}/${index}`)
-  }
-
-  /** A connected signer for the owner of a wallet, bound to a provider. */
-  ownerSigner(index: number, provider: Parameters<EthWallet['connect']>[0]): EthWallet {
-    const hd = this.deriveOwner(index)
-    return new EthWallet(hd.privateKey, provider)
-  }
-
-  /** Addresses only — safe to hand to the renderer. */
-  ownerAddress(index: number): string {
-    return this.deriveOwner(index).address
+    await this.seal(nextPassword, payload)
   }
 }
