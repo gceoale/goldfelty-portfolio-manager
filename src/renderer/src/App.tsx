@@ -13,11 +13,19 @@ import { Onboarding } from './views/Onboarding.tsx'
 import { Lock } from './views/Lock.tsx'
 
 export function App(): JSX.Element {
-  const { status, page, go, connectOpen, toasts, dismiss } = useApp()
+  const { status, settings, page, go, connectOpen, toasts, dismiss } = useApp()
 
   useEffect(() => {
     if (status?.platform) document.documentElement.dataset.platform = status.platform
   }, [status?.platform])
+
+  // Set on the page as well as through the OS preference, so a chosen theme
+  // applies even where Chromium doesn't follow Electron's theme source.
+  const theme = settings?.theme ?? status?.theme ?? 'system'
+  useEffect(() => {
+    if (theme === 'system') delete document.documentElement.dataset.theme
+    else document.documentElement.dataset.theme = theme
+  }, [theme])
 
   // Cmd/Ctrl+1..4 for the main pages, Cmd/Ctrl+, for Settings.
   useEffect(() => {

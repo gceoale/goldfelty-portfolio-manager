@@ -181,8 +181,8 @@ export function WalletGlyph({ name, color, icon, size = 20 }: { name: string; co
 
 export function AssetGlyph({ symbol, color, size = 22 }: { symbol: string; color: string; size?: number }): JSX.Element {
   return (
-    <span className="glyph glyph-asset" style={{ width: size, height: size, background: color, fontSize: Math.round(size * 0.38) }} aria-hidden="true">
-      {symbol.slice(0, 4)}
+    <span className="glyph glyph-asset" style={{ width: size, height: size, background: color, fontSize: Math.round(size * 0.34) }} aria-hidden="true">
+      {symbol.slice(0, 3)}
     </span>
   )
 }

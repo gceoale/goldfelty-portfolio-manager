@@ -180,6 +180,7 @@ function status(runtime: Runtime): AppStatus {
     unlockRetryAt: prefs.unlockRetryAt(),
     account: open ? store.account : null,
     greetingName: prefs.greetingName,
+    theme: prefs.theme,
     walletCount: open ? store.activeWallets().length : 0,
     version: app.getVersion(),
     platform: process.platform,

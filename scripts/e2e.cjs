@@ -52,6 +52,7 @@ function listen(handler) {
 const word = (n) => '0x' + BigInt(n).toString(16).padStart(64, '0')
 const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const rpcLog = []
+let drift = 0
 
 function rpcAnswer(chainId, call) {
   rpcLog.push(call.method)
@@ -60,8 +61,11 @@ function rpcAnswer(chainId, call) {
       return '0x' + chainId.toString(16)
     case 'eth_blockNumber':
       return '0x10'
-    case 'eth_getBalance':
-      return '0x' + (chainId === 1 ? 15n * 10n ** 17n : 2n * 10n ** 17n).toString(16)
+    case 'eth_getBalance': {
+      // Ethereum's balance wanders a little between refreshes, so the chart has a shape.
+      const wobble = BigInt(Math.round(Math.sin(drift / 2) * 1e17 + drift * 2e16))
+      return '0x' + (chainId === 1 ? 15n * 10n ** 17n + wobble : 2n * 10n ** 17n).toString(16)
+    }
     case 'eth_call': {
       const to = String(call.params[0].to).toLowerCase()
       return to === USDC ? word(2500n * 10n ** 6n) : word(0)
@@ -230,7 +234,7 @@ function makeWalletBackend() {
           return JSON.stringify({ result: signature })
         }
         case 'eth_sendTransaction': {
-          state.sent.push({ chainId: state.chainId, ...params[0] })
+          state.sent.push({ ...params[0], walletChain: state.chainId })
           const hash = '0x' + require('node:crypto').randomBytes(32).toString('hex')
           return JSON.stringify({ result: hash })
         }
@@ -264,7 +268,10 @@ function makeWalletBackend() {
     }
   })
   const page = await app.firstWindow()
+  let expectBlocked = false
   page.on('console', (msg) => {
+    // The probe below is meant to be blocked; anything else is a failure.
+    if (expectBlocked && /fees\.json/.test(msg.text())) return
     if (msg.type() === 'error' || /Content Security Policy/i.test(msg.text())) problems.push(`console: ${msg.text()}`)
   })
   page.on('pageerror', (err) => problems.push(`pageerror: ${err.message}`))
@@ -302,6 +309,7 @@ function makeWalletBackend() {
   assert.equal(updated.ok, true, JSON.stringify(updated))
 
   step('the renderer cannot reach the network or other channels')
+  expectBlocked = true
   const blocked = await page.evaluate(async (origin) => {
     try {
       await fetch(origin + '/fees.json')
@@ -311,6 +319,8 @@ function makeWalletBackend() {
     }
   }, mocks.origin)
   assert.equal(blocked, true, 'renderer fetch must be refused')
+  await page.waitForTimeout(200)
+  expectBlocked = false
   const badUrl = await page.evaluate(() => window.goldfelty.app.openExternal('file:///etc/passwd'))
   assert.equal(badUrl.ok, false)
   const badRpc = await page.evaluate(() => window.goldfelty.settings.update({ customRpc: { 1: 'http://evil.example' } }))
@@ -360,12 +370,35 @@ function makeWalletBackend() {
   await page.locator('table.holdings').waitFor({ timeout: 20_000 })
   await page.getByText('ETH', { exact: true }).first().waitFor()
   await shot('07-overview')
+  // Sharing was switched on after the first refresh, so the next one reports.
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  for (let i = 0; i < 40 && mocks.reports.size === 0; i++) await page.waitForTimeout(250)
   const report = [...mocks.reports.values()][0]
   assert.ok(report, 'the user chose to share, so a total arrived')
   assert.deepEqual(Object.keys(report).sort(), ['currency', 'reportedAt', 'value', 'wallets'])
   const stats = await (await fetch(`${mocks.origin}/v1/admin/stats`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } })).json()
   assert.equal(stats.users, 1)
   assert.equal(stats.sharing, 1)
+
+  step('a day of history, by moving the app’s clock forward between refreshes')
+  await app.evaluate(() => {
+    const real = Date.now.bind(Date)
+    globalThis.__gfOffset = 0
+    Date.now = () => real() + globalThis.__gfOffset
+  })
+  for (let hour = 1; hour <= 12; hour++) {
+    drift = hour
+    await app.evaluate((_electron, ms) => (globalThis.__gfOffset = ms), hour * 2 * 3600_000)
+    await page.evaluate(() => window.goldfelty.app.touch())
+    await page.evaluate(() => window.goldfelty.portfolio.load('30d'))
+  }
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  if (process.env.E2E_DEBUG) console.log(JSON.stringify((await page.evaluate(() => window.goldfelty.portfolio.load('30d'))).data.history.map((h) => [h.at, h.total])))
+  await page.locator('.chart svg path.chart-line').waitFor({ timeout: 10_000 })
+  await page.locator('.chart svg').hover({ position: { x: 400, y: 100 } })
+  await page.locator('.chart-tip').waitFor()
+  await shot('07b-overview-chart')
+  await page.mouse.move(5, 790)
 
   step('send, with a choice of wallet and the fee shown')
   await page.getByRole('button', { name: 'Send', exact: true }).first().click()
@@ -388,7 +421,8 @@ function makeWalletBackend() {
   const [main, fee] = backend.state.sent
   assert.equal(main.to.toLowerCase(), RECIPIENT.toLowerCase())
   assert.equal(BigInt(main.value), 25n * 10n ** 16n)
-  assert.equal(main.chainId, 1)
+  assert.equal(main.walletChain, 1, 'the wallet was on Ethereum when it sent')
+  assert.equal(main.chainId, '0x1', 'and the transaction itself names the chain')
   assert.equal(fee.to, FEE_ADDRESS)
   assert.equal(BigInt(fee.value), 125n * 10n ** 13n, '0.5% of 0.25 ETH')
   await page.getByRole('button', { name: 'Done' }).click()
@@ -408,6 +442,10 @@ function makeWalletBackend() {
   await page.locator('.sidebar-foot').getByRole('button', { name: 'Settings' }).click()
   await page.getByRole('heading', { name: 'Connected wallets' }).waitFor()
   await shot('13-settings')
+  await page.locator('.content').evaluate((el) => el.scrollTo(0, el.scrollHeight / 2))
+  await shot('13b-settings-middle')
+  await page.locator('.content').evaluate((el) => el.scrollTo(0, el.scrollHeight))
+  await shot('13c-settings-end')
 
   step('dark appearance')
   await page.evaluate(() => window.goldfelty.settings.update({ theme: 'dark' }))
@@ -428,6 +466,15 @@ function makeWalletBackend() {
   await page.getByLabel('Password').fill(PASSWORD)
   await page.getByRole('button', { name: 'Unlock' }).click()
   await page.getByRole('heading', { name: 'Overview' }).waitFor({ timeout: 20_000 })
+
+  await page.getByRole('button', { name: 'Connect a wallet' }).first().click()
+  await page.getByText('Found in your browser').waitFor({ timeout: 10_000 })
+  await shot('17-connect-dark')
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.goldfelty.settings.update({ theme: 'light' }))
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+  await page.locator('.chart svg path.chart-line').waitFor()
+  await shot('18-overview-light-final')
 
   step('nothing readable on disk')
   const files = fs.readdirSync(USER_DATA).filter((f) => /^(state|vault|prefs)/.test(f))

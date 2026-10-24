@@ -211,6 +211,7 @@ export interface AppStatus {
   account: Account | null
   /** Shown on the lock screen, so it lives outside the encrypted store. */
   greetingName: string | null
+  theme: Settings['theme']
   walletCount: number
   version: string
   platform: string
