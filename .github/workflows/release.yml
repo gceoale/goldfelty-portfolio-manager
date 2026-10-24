@@ -177,7 +177,11 @@ jobs:
       - name: Checksums
         run: |
           mkdir -p sums
-          (cd artifacts && find . -type f -exec sha256sum {} + | sed 's#  \./[^/]*/[^/]*/#  #' | sort -k2) > sums/SHA256SUMS.txt
+          # Listed under the names GitHub serves them as: it turns spaces in
+          # uploaded file names into dots, and shasum -c matches by name.
+          (cd artifacts && find . -type f -print0 | while IFS= read -r -d '' f; do
+            printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f" | tr ' ' '.')"
+          done | sort -k2) > sums/SHA256SUMS.txt
           cat sums/SHA256SUMS.txt
 
       - uses: softprops/action-gh-release@v2
@@ -192,6 +196,6 @@ jobs:
             sums/SHA256SUMS.txt
           draft: ${{ inputs.draft == true }}
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          # The notes in the repository are the release text. GitHub's
+          # generated list of PRs replaced them when both were set.
           body_path: .github/RELEASE_NOTES.md
-          append_body: true
