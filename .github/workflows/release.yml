@@ -15,8 +15,10 @@ on:
         default: false
         type: boolean
 
+# Read-only by default. Only the publish job, which creates the release,
+# gets write access.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -24,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -55,6 +59,8 @@ jobs:
             command: npm run dist:linux
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -71,6 +77,25 @@ jobs:
           docker run --rm --privileged tonistiigi/binfmt --install arm64 || true
 
       - run: npm ci
+
+      # The installers carry package.json's version in their names and in the
+      # app's About box, so it must match the release being cut.
+      - name: Stamp the version
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$REF" == refs/tags/v* ]]; then VERSION="${REF_NAME#v}"; else VERSION="$INPUT_VERSION"; fi
+          if [ -n "$VERSION" ]; then
+            if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "Not a version: $VERSION" >&2
+              exit 1
+            fi
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+          fi
+          node -p "'Building ' + require('./package.json').version"
 
       # Defining CSC_LINK as an empty string is NOT the same as leaving it
       # unset. A missing secret still creates the variable, electron-builder
@@ -108,12 +133,14 @@ jobs:
       - name: Build installers
         run: ${{ matrix.command }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Baked into the bundle so users never have to supply one. A
           # WalletConnect project ID is a public client identifier, not a
           # secret, so a repository variable is the right home for it; the
           # secret is accepted too for anyone who prefers that.
           MAIN_VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.WALLETCONNECT_PROJECT_ID || secrets.WALLETCONNECT_PROJECT_ID }}
+          # Where Goldfelty's send fee goes (the owner's Exodus address). Fixed
+          # at build time on purpose; see src/main/fees.ts. Unset means no fee.
+          MAIN_VITE_GOLDFELTY_FEE_ADDRESS: ${{ vars.GOLDFELTY_FEE_ADDRESS }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -131,6 +158,8 @@ jobs:
   publish:
     name: Attach to release
     needs: build
+    permissions:
+      contents: write
     # A tag push always cuts a release. A manual run only does so when it was
     # given a version — otherwise the installers are just workflow artifacts.
     if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
@@ -143,6 +172,14 @@ jobs:
       - name: List what will be attached
         run: find artifacts -type f -printf '%10s  %p\n' | sort -k2
 
+      # Published with the release so a download can be checked:
+      #   shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+      - name: Checksums
+        run: |
+          mkdir -p sums
+          (cd artifacts && find . -type f -exec sha256sum {} + | sed 's#  \./[^/]*/[^/]*/#  #' | sort -k2) > sums/SHA256SUMS.txt
+          cat sums/SHA256SUMS.txt
+
       - uses: softprops/action-gh-release@v2
         with:
           # On a manual run the tag does not exist yet; creating it here is the
@@ -150,7 +187,9 @@ jobs:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', inputs.version) }}
           name: Goldfelty Portfolio Manager ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', inputs.version) }}
           target_commitish: ${{ github.sha }}
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*
+            sums/SHA256SUMS.txt
           draft: ${{ inputs.draft == true }}
           fail_on_unmatched_files: true
           generate_release_notes: true

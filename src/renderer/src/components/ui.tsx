@@ -1,379 +1,238 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type JSX, type ReactNode } from 'react'
-import { IconAlert, IconCheck, IconClose, IconCopy, IconEye, IconEyeOff, IconInfo } from './Icons.js'
-import { contrastText, initials } from '../lib/format.js'
+import { useEffect, useId, useRef, type JSX, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes } from 'react'
+import { monogram } from '@shared/walletRegistry.ts'
+import type { Toast } from '../state/app.tsx'
+import { CloseIcon } from './Icons.tsx'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+/* ---- buttons --------------------------------------------------------------- */
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: Variant
-  size?: 'sm' | 'md' | 'lg'
-  block?: boolean
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'default' | 'primary' | 'plain' | 'danger'
+  small?: boolean
   busy?: boolean
-  icon?: ReactNode
 }
 
-export function Button({
-  variant = 'secondary',
-  size = 'md',
-  block,
-  busy,
-  icon,
-  children,
-  className = '',
-  disabled,
-  ...rest
-}: ButtonProps): JSX.Element {
-  const classes = [
-    'btn',
-    `btn--${variant}`,
-    size !== 'md' ? `btn--${size}` : '',
-    block ? 'btn--block' : '',
-    !children ? 'btn--icon' : '',
-    className
-  ]
-    .filter(Boolean)
-    .join(' ')
+export function Button({ variant = 'default', small, busy, className = '', children, disabled, ...rest }: ButtonProps): JSX.Element {
   return (
-    <button className={classes} disabled={disabled || busy} {...rest}>
-      {busy ? <span className="spinner" /> : icon}
+    <button
+      type="button"
+      className={`btn btn-${variant}${small ? ' btn-small' : ''} ${className}`}
+      disabled={disabled || busy}
+      aria-busy={busy || undefined}
+      {...rest}
+    >
+      {busy ? <Spinner /> : null}
       {children}
     </button>
   )
 }
 
-export function Card({
-  title,
-  description,
-  action,
-  flush,
-  children,
-  className = ''
-}: {
-  title?: ReactNode
-  description?: ReactNode
-  action?: ReactNode
-  flush?: boolean
-  children: ReactNode
-  className?: string
-}): JSX.Element {
-  return (
-    <section className={`card ${flush ? 'card--flush' : ''} ${className}`}>
-      {(title || action) && (
-        <header className="card__head" style={flush ? { padding: '18px 18px 0', marginBottom: 12 } : undefined}>
-          <div>
-            {title && <h2 className="card__title">{title}</h2>}
-            {description && <p className="card__desc">{description}</p>}
-          </div>
-          {action}
-        </header>
-      )}
-      {children}
-    </section>
-  )
+export function Spinner(): JSX.Element {
+  return <span className="spinner" aria-hidden="true" />
 }
+
+/* ---- form controls ---------------------------------------------------------- */
 
 export function Field({
   label,
   hint,
   error,
   children,
-  id
+  htmlFor
 }: {
-  label?: string
+  label: string
   hint?: ReactNode
   error?: string | null
   children: ReactNode
-  id?: string
+  htmlFor?: string
 }): JSX.Element {
   return (
     <div className="field">
-      {label && (
-        <label className="field__label" htmlFor={id}>
-          {label}
-        </label>
-      )}
-      {children}
-      {error ? (
-        <span className="field__error">
-          <IconAlert size={13} /> {error}
-        </span>
-      ) : hint ? (
-        <span className="field__hint">{hint}</span>
-      ) : null}
-    </div>
-  )
-}
-
-export function PasswordInput({
-  value,
-  onChange,
-  placeholder,
-  autoFocus,
-  id,
-  onEnter
-}: {
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-  autoFocus?: boolean
-  id?: string
-  onEnter?: () => void
-}): JSX.Element {
-  const [shown, setShown] = useState(false)
-  return (
-    <div className="input-group">
-      <input
-        id={id}
-        className="input"
-        type={shown ? 'text' : 'password'}
-        value={value}
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        autoComplete="off"
-        spellCheck={false}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && onEnter) onEnter()
-        }}
-        style={{ paddingRight: 44 }}
-      />
-      <div className="input-group__suffix">
-        <Button
-          variant="ghost"
-          size="sm"
-          type="button"
-          aria-label={shown ? 'Hide password' : 'Show password'}
-          onClick={() => setShown((s) => !s)}
-        >
-          {shown ? <IconEyeOff size={15} /> : <IconEye size={15} />}
-        </Button>
+      <label className="field-label" htmlFor={htmlFor}>
+        {label}
+      </label>
+      <div className="field-control">
+        {children}
+        {error ? <div className="field-error">{error}</div> : hint ? <div className="field-hint">{hint}</div> : null}
       </div>
     </div>
   )
 }
 
-export function Switch({
-  checked,
-  onChange,
-  label
-}: {
-  checked: boolean
-  onChange: (next: boolean) => void
-  label: string
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      className={`switch ${checked ? 'switch--on' : ''}`}
-      onClick={() => onChange(!checked)}
-    />
-  )
+export function TextInput(props: InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }): JSX.Element {
+  const { mono, className = '', ...rest } = props
+  return <input className={`input${mono ? ' mono' : ''} ${className}`} spellCheck={false} autoComplete="off" {...rest} />
 }
 
 export function Segmented<T extends string>({
   value,
   options,
-  onChange
+  onChange,
+  label
 }: {
   value: T
   options: Array<{ value: T; label: string }>
   onChange: (value: T) => void
+  label: string
 }): JSX.Element {
   return (
-    <div className="segmented" role="tablist">
-      {options.map((option) => (
+    <div className="segmented" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
         <button
-          key={option.value}
-          role="tab"
-          aria-selected={option.value === value}
-          className={`segmented__item ${option.value === value ? 'segmented__item--active' : ''}`}
-          onClick={() => onChange(option.value)}
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={o.value === value}
+          className={o.value === value ? 'on' : ''}
+          onClick={() => onChange(o.value)}
         >
-          {option.label}
+          {o.label}
         </button>
       ))}
     </div>
   )
 }
 
-export function Coin({ symbol, color, size = 'md' }: { symbol: string; color: string; size?: 'sm' | 'md' }): JSX.Element {
+export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }): JSX.Element {
   return (
-    <span
-      className={`coin ${size === 'sm' ? 'coin--sm' : ''}`}
-      style={{ background: color, color: contrastText(color) }}
-      aria-hidden="true"
-    >
-      {symbol.slice(0, 4).toUpperCase().slice(0, 3)}
-    </span>
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)}>
+      <span />
+    </button>
   )
 }
 
-export function Avatar({ name, size = 28 }: { name: string; size?: number }): JSX.Element {
+/* ---- grouped lists (System Settings style) --------------------------------- */
+
+export function Group({ title, footer, children }: { title?: string; footer?: ReactNode; children: ReactNode }): JSX.Element {
   return (
-    <span className="account-chip__avatar" style={{ width: size, height: size, fontSize: size * 0.42 }}>
-      {initials(name)}
-    </span>
+    <section className="group">
+      {title ? <h3 className="group-title">{title}</h3> : null}
+      <div className="group-body">{children}</div>
+      {footer ? <div className="group-footer">{footer}</div> : null}
+    </section>
   )
 }
 
-export function Banner({
-  tone = 'info',
-  title,
-  children,
-  action
-}: {
-  tone?: 'info' | 'warning' | 'danger' | 'positive'
-  title?: string
-  children?: ReactNode
-  action?: ReactNode
-}): JSX.Element {
-  const Icon = tone === 'info' ? IconInfo : tone === 'positive' ? IconCheck : IconAlert
+export function Row({ label, detail, children }: { label: ReactNode; detail?: ReactNode; children?: ReactNode }): JSX.Element {
   return (
-    <div className={`banner banner--${tone}`}>
-      <span className="banner__icon">
-        <Icon size={16} />
-      </span>
-      <div className="banner__body">
-        {title && <div className="banner__title">{title}</div>}
-        {children && <p>{children}</p>}
+    <div className="row">
+      <div className="row-text">
+        <div className="row-label">{label}</div>
+        {detail ? <div className="row-detail">{detail}</div> : null}
       </div>
-      {action}
+      {children ? <div className="row-accessory">{children}</div> : null}
     </div>
   )
 }
 
-export function EmptyState({
-  icon,
-  title,
-  children,
-  action
-}: {
-  icon: ReactNode
-  title: string
-  children?: ReactNode
-  action?: ReactNode
-}): JSX.Element {
-  return (
-    <div className="empty">
-      <span className="empty__icon">{icon}</span>
-      <span className="empty__title">{title}</span>
-      {children && <p className="empty__body">{children}</p>}
-      {action && <div style={{ marginTop: 10 }}>{action}</div>}
-    </div>
-  )
-}
+/* ---- sheets ------------------------------------------------------------------ */
 
-export function Modal({
-  open,
+export function Sheet({
   title,
-  description,
   onClose,
   children,
   footer,
   wide
 }: {
-  open: boolean
   title: string
-  description?: ReactNode
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
-}): JSX.Element | null {
-  const ref = useRef<HTMLDivElement>(null)
-
+}): JSX.Element {
+  const id = useId()
+  const ref = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
     }
-    document.addEventListener('keydown', onKey)
-    // Move focus into the dialog so keyboard users are not left behind it.
-    ref.current?.querySelector<HTMLElement>('input, button, select, textarea')?.focus()
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open) return null
+    window.addEventListener('keydown', onKey)
+    ref.current?.focus()
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
   return (
-    <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'modal--wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
-        <div className="modal__head">
-          <h2 className="modal__title">{title}</h2>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
-            <IconClose size={16} />
-          </Button>
-        </div>
-        {description && <p className="modal__desc">{description}</p>}
-        <div className="modal__body">{children}</div>
-        {footer && <div className="modal__foot">{footer}</div>}
+    <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={`sheet${wide ? ' sheet-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} ref={ref}>
+        <header className="sheet-head">
+          <h2 id={id}>{title}</h2>
+          <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </header>
+        <div className="sheet-body">{children}</div>
+        {footer ? <footer className="sheet-foot">{footer}</footer> : null}
       </div>
     </div>
   )
 }
 
-export function CopyButton({
-  value,
-  label = 'Copy',
-  clearAfterMs,
-  variant = 'secondary',
-  size = 'sm',
-  onCopied
-}: {
-  value: string
-  label?: string
-  clearAfterMs?: number
-  variant?: Variant
-  size?: 'sm' | 'md' | 'lg'
-  onCopied?: () => void
-}): JSX.Element {
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1800)
-    return () => clearTimeout(timer)
-  }, [copied])
+/* ---- identity ------------------------------------------------------------------ */
 
+/** A wallet app's mark: its own icon if it gave us one, else a monogram in its colour. */
+export function WalletGlyph({ name, color, icon, size = 20 }: { name: string; color: string; icon?: string | null; size?: number }): JSX.Element {
+  if (icon && /^data:image\/(png|svg\+xml|webp|jpeg|gif);/.test(icon)) {
+    return <img className="glyph" src={icon} alt="" width={size} height={size} />
+  }
   return (
-    <Button
-      variant={variant}
-      size={size}
-      icon={copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-      onClick={() => {
-        void window.goldfelty.app.copy(value, clearAfterMs).then(() => {
-          setCopied(true)
-          onCopied?.()
-        })
-      }}
-    >
-      {copied ? 'Copied' : label}
-    </Button>
+    <span className="glyph glyph-mono" style={{ width: size, height: size, background: color, fontSize: Math.round(size * 0.5) }} aria-hidden="true">
+      {monogram(name)}
+    </span>
   )
 }
 
-export interface Toast {
-  id: number
-  tone: 'success' | 'error' | 'info'
-  title: string
-  text?: string
+export function AssetGlyph({ symbol, color, size = 22 }: { symbol: string; color: string; size?: number }): JSX.Element {
+  return (
+    <span className="glyph glyph-asset" style={{ width: size, height: size, background: color, fontSize: Math.round(size * 0.34) }} aria-hidden="true">
+      {symbol.slice(0, 3)}
+    </span>
+  )
 }
 
-export function Toaster({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }): JSX.Element {
+export function StatusDot({ on, label }: { on: boolean; label: string }): JSX.Element {
+  return <span className={`dot ${on ? 'dot-on' : 'dot-off'}`} role="img" aria-label={label} title={label} />
+}
+
+/* ---- notifications --------------------------------------------------------------- */
+
+export function Toasts({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }): JSX.Element {
   return (
-    <div className="toaster" role="status" aria-live="polite">
-      {toasts.map((toast) => (
-        <div key={toast.id} className={`toast toast--${toast.tone}`} onClick={() => onDismiss(toast.id)}>
-          <span className="toast__icon">
-            {toast.tone === 'success' ? <IconCheck size={15} /> : toast.tone === 'error' ? <IconAlert size={15} /> : <IconInfo size={15} />}
-          </span>
-          <div className="toast__body">
-            <div className="toast__title">{toast.title}</div>
-            {toast.text && <div className="toast__text">{toast.text}</div>}
+    <div className="toasts" role="status" aria-live="polite">
+      {toasts.map((t) => (
+        <div key={t.id} className={`toast toast-${t.tone}`}>
+          <div>
+            <div className="toast-title">{t.title}</div>
+            {t.body ? <div className="toast-body">{t.body}</div> : null}
           </div>
+          <button type="button" className="icon-btn" aria-label="Dismiss" onClick={() => onDismiss(t.id)}>
+            <CloseIcon size={12} />
+          </button>
         </div>
       ))}
     </div>
+  )
+}
+
+export function Notice({ tone = 'info', children }: { tone?: 'info' | 'warn' | 'bad'; children: ReactNode }): JSX.Element {
+  return <div className={`notice notice-${tone}`}>{children}</div>
+}
+
+export function Empty({ title, children }: { title: string; children?: ReactNode }): JSX.Element {
+  return (
+    <div className="empty">
+      <div className="empty-title">{title}</div>
+      {children ? <div className="empty-body">{children}</div> : null}
+    </div>
+  )
+}
+
+/** A page's top bar: title on the left, controls on the right. Drags the window on macOS. */
+export function Toolbar({ title, subtitle, children }: { title: string; subtitle?: ReactNode; children?: ReactNode }): JSX.Element {
+  return (
+    <header className="toolbar">
+      <div className="toolbar-title">
+        <h1>{title}</h1>
+        {subtitle ? <span className="toolbar-subtitle">{subtitle}</span> : null}
+      </div>
+      <div className="toolbar-actions">{children}</div>
+    </header>
   )
 }

@@ -1,445 +1,334 @@
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
-import type { RouteOption, SendQuote, SendableAsset } from '@shared/types.js'
-import { Banner, Button, Card, Coin, EmptyState, Field, Modal, PasswordInput } from '../components/ui.js'
-import { RouteChooser } from '../components/RouteChooser.js'
-import { IconAlert, IconCheck, IconExternal, IconSend } from '../components/Icons.js'
-import { useApp } from '../state/app.js'
-import { money, shortAddress, tokenAmount } from '../lib/format.js'
+import { useEffect, useMemo, useState, type JSX } from 'react'
+import type { RouteOption, SendableAsset, SendQuote, SendResult } from '@shared/types.ts'
+import { formatFeeRate } from '@shared/fees.ts'
+import { useApp } from '../state/app.tsx'
+import { AssetGlyph, Button, Empty, Field, Notice, Sheet, Spinner, StatusDot, TextInput, Toolbar, WalletGlyph } from '../components/ui.tsx'
+import { WarningIcon } from '../components/Icons.tsx'
+import { money, shortAddress, tokenAmount } from '../lib/format.ts'
 
-/**
- * Send is a four-step funnel rather than one form. The route step is the reason:
- * when several wallets hold the same token, picking which one pays is a decision
- * only the user can make, and it has to happen before the amount is meaningful.
- */
-export function Send({ onNavigate }: { onNavigate: (tab: string) => void }): JSX.Element {
-  const { portfolio, settings, refreshPortfolio, notify, run } = useApp()
+const api = window.goldfelty
+
+type Phase = { name: 'edit' } | { name: 'sending'; quote: SendQuote } | { name: 'done'; quote: SendQuote; result: SendResult }
+
+export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Element {
+  const { settings, wallets, run, openConnect, refreshPortfolio, fee: feeInfo } = useApp()
   const currency = settings?.currency ?? 'USD'
-
-  const [assets, setAssets] = useState<SendableAsset[]>([])
-  const [symbol, setSymbol] = useState<string | null>(null)
+  const [assets, setAssets] = useState<SendableAsset[] | null>(null)
+  const [symbol, setSymbol] = useState(initialSymbol ?? '')
   const [routes, setRoutes] = useState<RouteOption[]>([])
-  const [route, setRoute] = useState<RouteOption | null>(null)
-  const [recipient, setRecipient] = useState('')
+  const [routeKey, setRouteKey] = useState<string | null>(null)
+  const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
   const [quote, setQuote] = useState<SendQuote | null>(null)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
   const [quoting, setQuoting] = useState(false)
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [password, setPassword] = useState('')
-  const [sending, setSending] = useState(false)
-  const [sent, setSent] = useState<{ hash: string; url: string } | null>(null)
-
-  const loadAssets = useCallback(async () => {
-    const list = await run(window.goldfelty.send.symbols(), 'Could not list your assets')
-    if (list) setAssets(list)
-  }, [run])
+  const [phase, setPhase] = useState<Phase>({ name: 'edit' })
 
   useEffect(() => {
-    void loadAssets()
-  }, [loadAssets, portfolio?.updatedAt])
-
-  // Routes depend on the amount, because "can this wallet cover it" does.
-  useEffect(() => {
-    if (!symbol) {
-      setRoutes([])
-      return
-    }
-    void window.goldfelty.send.routes(symbol, Number(amount) || 0).then((result) => {
-      if (!result.ok) return
-      setRoutes(result.data)
-      // Auto-select only when there is genuinely no choice to make.
-      setRoute((current) => {
-        if (current) return result.data.find((r) => r.walletId === current.walletId && r.tokenKey === current.tokenKey) ?? null
-        return result.data.length === 1 ? result.data[0] : null
-      })
+    void run(api.send.assets()).then((list) => {
+      setAssets(list ?? [])
+      if (list && list.length && !list.some((a) => a.symbol === symbol)) setSymbol(list[0].symbol)
     })
-  }, [symbol, amount])
-
-  const selectedAsset = useMemo(() => assets.find((a) => a.symbol === symbol) ?? null, [assets, symbol])
-  const amountNumber = Number(amount) || 0
-  const overBalance = route !== null && amountNumber > route.amount
-
-  const detailsReady =
-    route !== null && /^0x[a-fA-F0-9]{40}$/.test(recipient.trim()) && amountNumber > 0 && !overBalance
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
-    if (!detailsReady || !route) {
-      setQuote(null)
-      return
-    }
-    let cancelled = false
-    setQuoting(true)
-    const timer = setTimeout(() => {
-      void window.goldfelty.send
-        .quote({ walletId: route.walletId, tokenKey: route.tokenKey, to: recipient.trim(), amount })
-        .then((result) => {
-          if (cancelled) return
-          setQuoting(false)
-          if (result.ok) setQuote(result.data)
-          else {
-            setQuote(null)
-            notify({ tone: 'error', title: 'Could not price this transfer', text: result.error })
-          }
-        })
-    }, 450)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-      setQuoting(false)
-    }
-  }, [detailsReady, route, recipient, amount, notify])
-
-  const reset = (): void => {
-    setSymbol(null)
-    setRoutes([])
-    setRoute(null)
-    setRecipient('')
-    setAmount('')
+    if (!symbol) return
+    setRouteKey(null)
     setQuote(null)
-    setSent(null)
+    void run(api.send.routes(symbol, Number(amount) || 0)).then((r) => {
+      const list = r ?? []
+      setRoutes(list)
+      // Only one wallet holds it: nothing to choose. Several: the user picks.
+      if (list.length === 1) setRouteKey(keyOf(list[0]))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol])
+
+  const route = routes.find((r) => keyOf(r) === routeKey) ?? null
+  const asset = assets?.find((a) => a.symbol === symbol) ?? null
+  const ownAddresses = useMemo(
+    () => wallets.filter((w) => !w.archived && w.kind !== 'readonly' && w.address !== route?.address),
+    [wallets, route]
+  )
+
+  // Any edit invalidates the review.
+  useEffect(() => {
+    setQuote(null)
+    setQuoteError(null)
+  }, [routeKey, to, amount])
+
+  const ready = !!route && /^0x[0-9a-fA-F]{40}$/.test(to.trim()) && Number(amount) > 0
+
+  const review = async (): Promise<void> => {
+    if (!route) return
+    setQuoting(true)
+    setQuoteError(null)
+    const result = await api.send.quote({ walletId: route.walletId, tokenKey: route.tokenKey, to: to.trim(), amount: amount.trim() })
+    setQuoting(false)
+    if (result.ok) setQuote(result.data)
+    else setQuoteError(result.error)
   }
 
-  const submit = async (): Promise<void> => {
-    if (!route) return
-    setSending(true)
-    const result = await window.goldfelty.send.execute({
+  const send = async (): Promise<void> => {
+    if (!quote || !route) return
+    setPhase({ name: 'sending', quote })
+    const result = await api.send.execute({
       walletId: route.walletId,
       tokenKey: route.tokenKey,
-      to: recipient.trim(),
-      amount,
-      password
+      to: quote.to,
+      amount: amount.trim(),
+      feeBps: quote.fee?.bps ?? 0
     })
-    setSending(false)
-    setPassword('')
-    if (!result.ok) {
-      notify({ tone: 'error', title: 'Transfer failed', text: result.error })
-      return
+    if (result.ok) {
+      setPhase({ name: 'done', quote, result: result.data })
+      void refreshPortfolio()
+    } else {
+      setPhase({ name: 'edit' })
+      setQuote(null)
+      setQuoteError(result.error)
     }
-    setConfirmOpen(false)
-    setSent({ hash: result.data.hash, url: result.data.explorerUrl })
-    notify({ tone: 'success', title: 'Transfer submitted', text: shortAddress(result.data.hash, 10, 8) })
-    void refreshPortfolio()
   }
 
-  if (sent) {
+  const setMax = (): void => {
+    if (!route) return
+    // Leave room for Goldfelty's fee, which comes out of the same balance.
+    const bps = feeInfo?.enabled ? feeInfo.bps : 0
+    const max = route.amount / (1 + bps / 10_000)
+    setAmount(String(Math.floor(max * 1e6) / 1e6))
+  }
+
+  if (assets && assets.length === 0) {
     return (
-      <div className="view">
-        <div className="view__inner view__inner--narrow">
-          <Card>
-            <EmptyState
-              icon={<IconCheck size={20} />}
-              title="Transfer submitted"
-              action={
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button icon={<IconExternal size={14} />} onClick={() => void window.goldfelty.app.openExternal(sent.url)}>
-                    View on explorer
-                  </Button>
-                  <Button variant="primary" onClick={reset}>
-                    Send something else
-                  </Button>
-                </div>
-              }
-            >
-              On its way. Home updates once it confirms.
-              <div className="mono" style={{ marginTop: 10, wordBreak: 'break-all', color: 'var(--text-secondary)' }}>
-                {sent.hash}
-              </div>
-            </EmptyState>
-          </Card>
+      <div className="page">
+        <Toolbar title="Send" />
+        <div className="page-body">
+          <Empty title="Nothing to send yet">
+            <p>Send works from wallets that are connected and hold a balance.</p>
+            <Button variant="primary" onClick={() => openConnect(true)}>
+              Connect a wallet
+            </Button>
+          </Empty>
         </div>
       </div>
     )
   }
 
-  if (assets.length === 0) {
-    return (
-      <div className="view">
-        <div className="view__inner view__inner--narrow">
-          <Card>
-            <EmptyState
-              icon={<IconSend size={20} />}
-              title="Nothing to send yet"
-              action={
-                <Button variant="primary" onClick={() => onNavigate('receive')}>
-                  Get a receiving address
-                </Button>
-              }
-            >
-              Nothing to send until a wallet holds something. Watch-only wallets never appear here.
-            </EmptyState>
-          </Card>
-        </div>
-      </div>
-    )
-  }
+  const wallet = route?.providerName ?? 'your wallet'
 
   return (
-    <div className="view">
-      <div className="view__inner view__inner--narrow">
-        <div className="steps">
-          {/* ---- 1. asset ---------------------------------------------- */}
-          <Card>
-            <div className={`step ${symbol ? 'step--done' : 'step--active'}`}>
-              <div className="step__head">
-                <span className="step__num">{symbol ? <IconCheck size={11} /> : 1}</span>
-                <span className="step__title">Choose an asset</span>
-                {selectedAsset && (
-                  <span className="step__hint">
-                    {tokenAmount(selectedAsset.amount, selectedAsset.symbol)} available
-                  </span>
-                )}
-              </div>
-              <div className="picker-grid">
-                {assets.map((asset) => (
-                  <button
-                    key={asset.symbol}
-                    className={`picker ${symbol === asset.symbol ? 'picker--selected' : ''}`}
-                    onClick={() => {
-                      setSymbol(asset.symbol)
-                      setRoute(null)
-                      setAmount('')
-                      setQuote(null)
-                    }}
-                  >
-                    <Coin symbol={asset.symbol} color={asset.color} size="sm" />
-                    <div className="picker__body">
-                      <div className="picker__title">{asset.symbol}</div>
-                      <div className="picker__meta">
-                        {asset.routes} {asset.routes === 1 ? 'wallet' : 'wallets'} · {money(asset.value, currency)}
-                      </div>
-                    </div>
-                    {symbol === asset.symbol && <IconCheck size={15} className="picker__check" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </Card>
+    <div className="page">
+      <Toolbar title="Send" />
+      <div className="page-body split">
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (ready) void review()
+          }}
+        >
+          <Field label="Asset" htmlFor="send-asset">
+            <select id="send-asset" className="input" value={symbol} onChange={(e) => setSymbol(e.target.value)}>
+              {(assets ?? []).map((a) => (
+                <option key={a.symbol} value={a.symbol}>
+                  {a.symbol}: {tokenAmount(a.amount)} in {a.routes} place{a.routes === 1 ? '' : 's'}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-          {/* ---- 2. route ---------------------------------------------- */}
-          {symbol && (
-            <Card>
-              <div className={`step ${route ? 'step--done' : 'step--active'}`}>
-                <div className="step__head">
-                  <span className="step__num">{route ? <IconCheck size={11} /> : 2}</span>
-                  <span className="step__title">
-                    {routes.length > 1 ? `Choose which wallet sends your ${symbol}` : 'Sending wallet'}
-                  </span>
-                  {routes.length > 1 && <span className="step__hint">{routes.length} routes available</span>}
-                </div>
-
-                <RouteChooser
-                  routes={routes}
-                  selected={route}
-                  onSelect={setRoute}
-                  symbol={symbol}
-                  mode="send"
-                  currency={currency}
-                  requiredAmount={amountNumber}
-                />
-              </div>
-            </Card>
-          )}
-
-          {/* ---- 3. details -------------------------------------------- */}
-          {route && (
-            <Card>
-              <div className="step step--active">
-                <div className="step__head">
-                  <span className="step__num">3</span>
-                  <span className="step__title">Amount and recipient</span>
-                  <span className="step__hint">
-                    on {route.chainName} from {route.walletLabel}
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <Field
-                    label="Amount"
-                    error={overBalance ? `That is more than the ${tokenAmount(route.amount, symbol!)} this wallet holds.` : null}
-                    hint={
-                      quote
-                        ? `≈ ${money(quote.totalValue, currency)}`
-                        : `Available: ${tokenAmount(route.amount, symbol ?? '')}`
-                    }
-                  >
-                    <div className="input-group">
-                      <input
-                        className="input input--amount num"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-                      />
-                      <div className="input-group__suffix" style={{ right: 12 }}>
-                        <span className="muted" style={{ fontSize: 14, fontWeight: 600 }}>
-                          {symbol}
+          <Field
+            label="From"
+            hint={routes.length > 1 ? `${routes.length} wallets hold ${symbol}. Choose which one sends it.` : undefined}
+          >
+            {routes.length === 0 ? (
+              <span className="muted">{assets ? 'No connected wallet holds this.' : 'Loading…'}</span>
+            ) : (
+              <div className="route-list" role="radiogroup" aria-label="Send from">
+                {routes.map((r) => {
+                  const k = keyOf(r)
+                  return (
+                    <label key={k} className={`route${routeKey === k ? ' selected' : ''}${!r.reachable ? ' unreachable' : ''}`}>
+                      <input type="radio" name="route" checked={routeKey === k} onChange={() => setRouteKey(k)} />
+                      <WalletGlyph name={r.providerName ?? r.walletLabel} color={r.walletColor} size={20} />
+                      <span className="route-text">
+                        <span>
+                          {r.walletLabel} <span className="muted">on {r.chainName}</span>
                         </span>
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            // Leave native gas behind — spending the balance to
-                            // the last wei makes the account unusable.
-                            const isNative = route.tokenKey.endsWith(':native')
-                            const max = isNative ? Math.max(route.amount - (quote?.networkFee ?? 0.0008), 0) : route.amount
-                            setAmount(String(Number(max.toFixed(8))))
-                          }}
-                        >
-                          Max
-                        </Button>
-                      </div>
-                    </div>
-                  </Field>
-
-                  <Field
-                    label="Recipient address"
-                    error={
-                      recipient.trim() && !/^0x[a-fA-F0-9]{40}$/.test(recipient.trim())
-                        ? 'That is not a valid address.'
-                        : null
-                    }
-                    hint={`This address must be able to receive on ${route.chainName}.`}
-                  >
-                    <input
-                      className="input input--mono"
-                      placeholder="0x…"
-                      spellCheck={false}
-                      autoComplete="off"
-                      value={recipient}
-                      onChange={(e) => setRecipient(e.target.value.trim())}
-                    />
-                  </Field>
-                </div>
+                        <span className="muted small">
+                          {shortAddress(r.address)} · {r.reachable ? `via ${r.providerName ?? 'wallet'}` : `${r.providerName ?? 'Wallet'} isn’t reachable right now`}
+                        </span>
+                      </span>
+                      <span className="route-amount">
+                        {tokenAmount(r.amount, symbol)}
+                        <StatusDot on={r.reachable} label={r.reachable ? 'Reachable' : 'Not reachable'} />
+                      </span>
+                    </label>
+                  )
+                })}
               </div>
-            </Card>
-          )}
+            )}
+          </Field>
 
-          {/* ---- 4. review --------------------------------------------- */}
-          {detailsReady && (
-            <Card>
-              <div className="step step--active">
-                <div className="step__head">
-                  <span className="step__num">4</span>
-                  <span className="step__title">Review</span>
-                  {quoting && <span className="step__hint">Pricing…</span>}
-                </div>
-
-                {quote?.warnings.map((warning) => (
-                  <div key={warning} style={{ marginBottom: 10 }}>
-                    <Banner tone="warning">{warning}</Banner>
-                  </div>
+          <Field label="To" htmlFor="send-to" hint="Paste the full address and check it character by character.">
+            <TextInput id="send-to" mono placeholder="0x…" value={to} onChange={(e) => setTo(e.target.value.trim())} />
+            {ownAddresses.length > 0 ? (
+              <select
+                className="input input-quiet"
+                aria-label="Send to one of your wallets"
+                value=""
+                onChange={(e) => e.target.value && setTo(e.target.value)}
+              >
+                <option value="">Or one of your wallets…</option>
+                {ownAddresses.map((w) => (
+                  <option key={w.id} value={w.address}>
+                    {w.label} ({shortAddress(w.address)})
+                  </option>
                 ))}
+              </select>
+            ) : null}
+          </Field>
 
-                <div className="summary">
-                  <div className="summary__line">
-                    <span className="summary__key">Sending</span>
-                    <span className="summary__val">{tokenAmount(amountNumber, symbol ?? '')}</span>
-                  </div>
-                  <div className="summary__line">
-                    <span className="summary__key">From</span>
-                    <span className="summary__val">
-                      {route?.walletLabel} · <span className="mono">{shortAddress(route?.address ?? '')}</span>
-                    </span>
-                  </div>
-                  <div className="summary__line">
-                    <span className="summary__key">To</span>
-                    <span className="summary__val mono">{recipient}</span>
-                  </div>
-                  <div className="summary__line">
-                    <span className="summary__key">Network</span>
-                    <span className="summary__val">{route?.chainName}</span>
-                  </div>
-                  <div className="summary__line">
-                    <span className="summary__key">Estimated fee</span>
-                    <span className="summary__val">
-                      {quote
-                        ? `${tokenAmount(quote.networkFee, quote.networkFeeSymbol)}${quote.networkFeeValue > 0 ? ` · ${money(quote.networkFeeValue, currency)}` : ''}`
-                        : '—'}
-                    </span>
-                  </div>
-                  <div className="summary__line summary__line--total">
-                    <span>Value being sent</span>
-                    <span className="summary__val">{quote ? money(quote.totalValue, currency) : '—'}</span>
-                  </div>
-                </div>
+          <Field label="Amount" htmlFor="send-amount" hint={route ? `Available: ${tokenAmount(route.amount, symbol)}` : undefined}>
+            <div className="input-with">
+              <TextInput
+                id="send-amount"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+              />
+              <span className="input-suffix">{symbol}</span>
+              <Button small onClick={setMax} disabled={!route}>
+                Max
+              </Button>
+            </div>
+          </Field>
 
-                <Button
-                  variant="primary"
-                  size="lg"
-                  block
-                  style={{ marginTop: 18 }}
-                  disabled={!quote || quoting}
-                  icon={<IconSend size={15} />}
-                  onClick={() => setConfirmOpen(true)}
-                >
-                  Send {tokenAmount(amountNumber, symbol ?? '')}
-                </Button>
-              </div>
-            </Card>
+          <div className="form-actions">
+            <Button type="submit" variant="primary" disabled={!ready} busy={quoting}>
+              Review
+            </Button>
+          </div>
+        </form>
+
+        <aside className="review" aria-label="Review">
+          <h2 className="section-title">Review</h2>
+          {quoteError ? <Notice tone="bad">{quoteError}</Notice> : null}
+          {!quote ? (
+            <p className="muted">
+              {asset ? <AssetGlyph symbol={asset.symbol} color={asset.color} size={18} /> : null} Fill in the form and choose Review. Nothing is sent until you
+              approve it in your wallet.
+            </p>
+          ) : (
+            <>
+              <dl className="review-list">
+                <dt>Recipient gets</dt>
+                <dd>
+                  <strong>{tokenAmount(quote.amount, quote.symbol)}</strong>
+                  {quote.totalValue ? <span className="muted">{money(quote.totalValue, currency)}</span> : null}
+                </dd>
+                <dt>To</dt>
+                <dd className="mono wrap">{quote.to}</dd>
+                <dt>From</dt>
+                <dd>
+                  {quote.walletLabel} <span className="muted">on {quote.chainName}</span>
+                </dd>
+                <dt>Network fee</dt>
+                <dd>
+                  about {tokenAmount(quote.networkFee, quote.networkFeeSymbol)}
+                  {quote.networkFeeValue ? <span className="muted">{money(quote.networkFeeValue, currency)}</span> : null}
+                </dd>
+                {quote.fee ? (
+                  <>
+                    <dt>Goldfelty fee ({formatFeeRate(quote.fee.bps)})</dt>
+                    <dd>
+                      {tokenAmount(quote.fee.amount, quote.fee.symbol)}
+                      {quote.fee.value ? <span className="muted">{money(quote.fee.value, currency)}</span> : null}
+                    </dd>
+                    <dt>Total from wallet</dt>
+                    <dd>
+                      <strong>{tokenAmount(quote.amount + quote.fee.amount, quote.symbol)}</strong> <span className="muted">plus network fees</span>
+                    </dd>
+                  </>
+                ) : null}
+              </dl>
+              {quote.warnings.map((w) => (
+                <Notice key={w} tone="warn">
+                  <WarningIcon size={12} /> {w}
+                </Notice>
+              ))}
+              <p className="muted small">
+                {quote.fee
+                  ? `${quote.providerName} will ask you to approve two transactions: your transfer, then the ${formatFeeRate(quote.fee.bps)} Goldfelty fee. `
+                  : `${quote.providerName} will show you the transfer to approve. `}
+                Check the address there too.
+              </p>
+              <Button variant="primary" className="wide" onClick={() => void send()}>
+                Send with {quote.providerName}
+              </Button>
+            </>
           )}
-        </div>
+        </aside>
       </div>
 
-      <Modal
-        open={confirmOpen}
-        title="Confirm this transfer"
-        description="This cannot be undone."
-        onClose={() => {
-          setConfirmOpen(false)
-          setPassword('')
-        }}
-        footer={
-          <>
-            <Button
-              onClick={() => {
-                setConfirmOpen(false)
-                setPassword('')
-              }}
-            >
-              Cancel
-            </Button>
+      {phase.name === 'sending' ? (
+        <Sheet title={`Approve in ${phase.quote.providerName}`} onClose={() => undefined}>
+          <div className="waiting-block">
+            <Spinner />
+            <div>
+              <p>
+                {phase.quote.providerName} should be showing a request to send {tokenAmount(phase.quote.amount, phase.quote.symbol)} to{' '}
+                <span className="mono">{shortAddress(phase.quote.to)}</span>.
+              </p>
+              {phase.quote.fee ? <p className="muted">After that, it asks for the Goldfelty fee of {tokenAmount(phase.quote.fee.amount, phase.quote.fee.symbol)}.</p> : null}
+              {route?.walletKind === 'browser' ? <p className="muted small">It appears in your browser, in the Goldfelty tab.</p> : null}
+              {route?.walletKind === 'walletconnect' ? <p className="muted small">Check your phone.</p> : null}
+            </div>
+          </div>
+        </Sheet>
+      ) : null}
+
+      {phase.name === 'done' ? (
+        <Sheet
+          title="Sent"
+          onClose={() => {
+            setPhase({ name: 'edit' })
+            setQuote(null)
+            setAmount('')
+          }}
+          footer={
             <Button
               variant="primary"
-              busy={sending}
-              disabled={settings?.confirmBeforeSend !== false && password.length === 0}
-              onClick={() => void submit()}
+              onClick={() => {
+                setPhase({ name: 'edit' })
+                setQuote(null)
+                setAmount('')
+              }}
             >
-              Send now
+              Done
             </Button>
-          </>
-        }
-      >
-        <div className="summary">
-          <div className="summary__line">
-            <span className="summary__key">Amount</span>
-            <span className="summary__val">{tokenAmount(amountNumber, symbol ?? '')}</span>
-          </div>
-          <div className="summary__line">
-            <span className="summary__key">To</span>
-            <span className="summary__val mono">{recipient}</span>
-          </div>
-          <div className="summary__line">
-            <span className="summary__key">Via</span>
-            <span className="summary__val">
-              {route?.walletLabel} on {route?.chainName}
-            </span>
-          </div>
-        </div>
-        {quote?.requiresDeployment && (
-          <Banner tone="warning" title="Two transactions">
-            First use on {route?.chainName}: the account is deployed, then the transfer sends. Gas for both.
-          </Banner>
-        )}
-        {settings?.confirmBeforeSend !== false ? (
-          <Field label="Password" hint="Required for every transfer. Turn this off in Settings → Security.">
-            <PasswordInput value={password} onChange={setPassword} autoFocus onEnter={() => void submit()} />
-          </Field>
-        ) : (
-          <Banner tone="warning" title="Password confirmation is off">
-            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              <IconAlert size={13} /> Anyone at this computer can move funds while unlocked.
-            </span>
-          </Banner>
-        )}
-      </Modal>
+          }
+        >
+          <p>
+            {wallet} broadcast your transfer of {tokenAmount(phase.quote.amount, phase.quote.symbol)}. It usually confirms within a minute; Activity shows when it
+            does.
+          </p>
+          <p>
+            <button type="button" className="link" onClick={() => void api.app.openExternal(phase.result.explorerUrl)}>
+              View it on the block explorer
+            </button>
+          </p>
+          {phase.result.fee?.status === 'sent' ? <p className="muted small">The Goldfelty fee was sent as a separate transaction.</p> : null}
+          {phase.result.fee && phase.result.fee.status !== 'sent' ? (
+            <Notice tone="warn">The Goldfelty fee wasn’t sent: {phase.result.fee.message}</Notice>
+          ) : null}
+        </Sheet>
+      ) : null}
     </div>
   )
+}
+
+function keyOf(r: RouteOption): string {
+  return `${r.walletId}|${r.tokenKey}`
 }

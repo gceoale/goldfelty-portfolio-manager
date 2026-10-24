@@ -1,230 +1,139 @@
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
+import { useEffect, useState, type JSX } from 'react'
 import QRCode from 'qrcode'
-import type { ReceivableAsset, RouteOption } from '@shared/types.js'
-import { Banner, Button, Card, Coin, CopyButton, EmptyState, Field } from '../components/ui.js'
-import { RouteChooser } from '../components/RouteChooser.js'
-import { IconAlert, IconCheck, IconExternal, IconReceive, IconSearch } from '../components/Icons.js'
-import { useApp } from '../state/app.js'
+import type { ReceivableAsset, RouteOption } from '@shared/types.ts'
+import { useApp } from '../state/app.tsx'
+import { Button, Empty, Field, Notice, Toolbar, WalletGlyph } from '../components/ui.tsx'
+import { CheckIcon, CopyIcon } from '../components/Icons.tsx'
+import { groupedAddress, shortAddress } from '../lib/format.ts'
 
-/**
- * Receive mirrors Send: choose the asset, then — when more than one wallet can
- * take it — choose which wallet before the address is ever copyable. Handing out
- * an address on the wrong chain is how people lose money.
- */
-export function Receive({ onNavigate }: { onNavigate: (tab: string) => void }): JSX.Element {
-  const { wallets, chains, settings, notify, run } = useApp()
-  const [assets, setAssets] = useState<ReceivableAsset[]>([])
-  const [query, setQuery] = useState('')
-  const [symbol, setSymbol] = useState<string | null>(null)
+const api = window.goldfelty
+
+export function Receive({ symbol: initialSymbol }: { symbol?: string }): JSX.Element {
+  const { run, openConnect } = useApp()
+  const [assets, setAssets] = useState<ReceivableAsset[] | null>(null)
+  const [symbol, setSymbol] = useState(initialSymbol ?? '')
   const [routes, setRoutes] = useState<RouteOption[]>([])
-  const [route, setRoute] = useState<RouteOption | null>(null)
+  const [routeKey, setRouteKey] = useState<string | null>(null)
   const [qr, setQr] = useState<string | null>(null)
-  const currency = settings?.currency ?? 'USD'
-
-  const load = useCallback(async () => {
-    const list = await run(window.goldfelty.receive.symbols(), 'Could not list receivable assets')
-    if (list) setAssets(list)
-  }, [run])
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    void load()
-  }, [load, wallets.length])
-
-  useEffect(() => {
-    if (!symbol) {
-      setRoutes([])
-      setRoute(null)
-      return
-    }
-    void window.goldfelty.receive.routes(symbol).then((result) => {
-      if (!result.ok) return
-      setRoutes(result.data)
-      setRoute(result.data.length === 1 ? result.data[0] : null)
+    void run(api.receive.assets()).then((list) => {
+      setAssets(list ?? [])
+      if (list && list.length && !list.some((a) => a.symbol === symbol)) setSymbol(list.find((a) => a.symbol === 'ETH')?.symbol ?? list[0].symbol)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!symbol) return
+    setRouteKey(null)
+    void run(api.receive.routes(symbol)).then((r) => {
+      const list = r ?? []
+      setRoutes(list)
+      if (list.length === 1) setRouteKey(keyOf(list[0]))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol])
 
+  const route = routes.find((r) => keyOf(r) === routeKey) ?? null
+
   useEffect(() => {
-    if (!route) {
-      setQr(null)
-      return
-    }
-    let cancelled = false
-    void QRCode.toDataURL(route.address, {
-      errorCorrectionLevel: 'M',
-      margin: 0,
-      scale: 8,
-      color: { dark: '#0b0c10', light: '#ffffff' }
-    }).then((url) => {
-      if (!cancelled) setQr(url)
-    })
-    return () => {
-      cancelled = true
-    }
+    setQr(null)
+    setCopied(false)
+    if (!route) return
+    // Plain address in the code: every wallet scanner reads that.
+    void QRCode.toDataURL(route.address, { margin: 1, width: 200, errorCorrectionLevel: 'M' }).then(setQr)
   }, [route])
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return assets
-    return assets.filter((a) => a.symbol.toLowerCase().includes(needle) || a.name.toLowerCase().includes(needle))
-  }, [assets, query])
-
-  const chain = route ? chains.find((c) => c.id === route.chainId) : null
-
-  if (wallets.length === 0) {
+  if (assets && assets.length === 0) {
     return (
-      <div className="view">
-        <div className="view__inner view__inner--narrow">
-          <Card>
-            <EmptyState
-              icon={<IconReceive size={20} />}
-              title="Connect a wallet first"
-              action={
-                <Button variant="primary" onClick={() => onNavigate('settings')}>
-                  Connect a wallet
-                </Button>
-              }
-            >
-              Connect a wallet first.
-            </EmptyState>
-          </Card>
+      <div className="page">
+        <Toolbar title="Receive" />
+        <div className="page-body">
+          <Empty title="No wallet to receive into">
+            <p>Connect a wallet first. Goldfelty shows its address; the funds go straight to that wallet.</p>
+            <Button variant="primary" onClick={() => openConnect(true)}>
+              Connect a wallet
+            </Button>
+          </Empty>
         </div>
       </div>
     )
   }
 
+  const copy = async (): Promise<void> => {
+    if (!route) return
+    if (await run(api.app.copy(route.address))) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    }
+  }
+
   return (
-    <div className="view">
-      <div className="view__inner view__inner--narrow">
-        <div className="steps">
-          <Card>
-            <div className={`step ${symbol ? 'step--done' : 'step--active'}`}>
-              <div className="step__head">
-                <span className="step__num">{symbol ? <IconCheck size={11} /> : 1}</span>
-                <span className="step__title">What are you receiving?</span>
-              </div>
-              <div style={{ marginBottom: 12 }}>
-                <div className="input-group">
-                  <input
-                    className="input"
-                    placeholder="Search assets"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    style={{ paddingLeft: 34 }}
-                  />
-                  <span style={{ position: 'absolute', left: 11, color: 'var(--text-muted)', display: 'flex' }}>
-                    <IconSearch size={15} />
-                  </span>
-                </div>
-              </div>
-              <div className="picker-grid">
-                {filtered.map((asset) => (
-                  <button
-                    key={asset.symbol}
-                    className={`picker ${symbol === asset.symbol ? 'picker--selected' : ''}`}
-                    onClick={() => setSymbol(asset.symbol)}
-                  >
-                    <Coin symbol={asset.symbol} color={asset.color} size="sm" />
-                    <div className="picker__body">
-                      <div className="picker__title">{asset.symbol}</div>
-                      <div className="picker__meta">{asset.chains.join(', ')}</div>
-                    </div>
-                    {symbol === asset.symbol && <IconCheck size={15} className="picker__check" />}
-                  </button>
-                ))}
-                {filtered.length === 0 && (
-                  <p className="muted" style={{ fontSize: 12.5, gridColumn: '1 / -1' }}>
-                    No asset matches &ldquo;{query}&rdquo;.
-                  </p>
-                )}
-              </div>
+    <div className="page">
+      <Toolbar title="Receive" />
+      <div className="page-body split">
+        <div className="form">
+          <Field label="Asset" htmlFor="recv-asset">
+            <select id="recv-asset" className="input" value={symbol} onChange={(e) => setSymbol(e.target.value)}>
+              {(assets ?? []).map((a) => (
+                <option key={a.symbol} value={a.symbol}>
+                  {a.symbol}, {a.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Into" hint={routes.length > 1 ? 'Choose the wallet and network. The sender must use the same network.' : undefined}>
+            <div className="route-list" role="radiogroup" aria-label="Receive into">
+              {routes.map((r) => {
+                const k = keyOf(r)
+                return (
+                  <label key={k} className={`route${routeKey === k ? ' selected' : ''}`}>
+                    <input type="radio" name="recv-route" checked={routeKey === k} onChange={() => setRouteKey(k)} />
+                    <WalletGlyph name={r.providerName ?? r.walletLabel} color={r.walletColor} size={20} />
+                    <span className="route-text">
+                      <span>
+                        {r.walletLabel} <span className="muted">on {r.chainName}</span>
+                      </span>
+                      <span className="muted small mono">{shortAddress(r.address)}</span>
+                    </span>
+                  </label>
+                )
+              })}
             </div>
-          </Card>
-
-          {symbol && (
-            <Card>
-              <div className={`step ${route ? 'step--done' : 'step--active'}`}>
-                <div className="step__head">
-                  <span className="step__num">{route ? <IconCheck size={11} /> : 2}</span>
-                  <span className="step__title">
-                    {routes.length > 1 ? `Which wallet should receive your ${symbol}?` : 'Receiving wallet'}
-                  </span>
-                  {routes.length > 1 && <span className="step__hint">{routes.length} options</span>}
-                </div>
-
-                <RouteChooser
-                  routes={routes}
-                  selected={route}
-                  onSelect={setRoute}
-                  symbol={symbol}
-                  mode="receive"
-                  currency={currency}
-                />
-              </div>
-            </Card>
-          )}
-
-          {route && (
-            <Card>
-              <div className="step step--active">
-                <div className="step__head">
-                  <span className="step__num">3</span>
-                  <span className="step__title">Your address</span>
-                </div>
-
-                <Banner tone="warning" title={`Send only ${symbol} on ${route.chainName}`}>
-                  {route.walletLabel}. Anything sent on another network may be unrecoverable.
-                </Banner>
-
-                <div className="qr-panel">
-                  {qr && (
-                    <div className="qr-frame">
-                      <img src={qr} alt={`QR code for ${route.address}`} />
-                    </div>
-                  )}
-
-                  <div className="address-box">
-                    <span className="address-box__text">{route.address}</span>
-                    <CopyButton
-                      value={route.address}
-                      variant="primary"
-                      label="Copy"
-                      onCopied={() =>
-                        notify({
-                          tone: 'success',
-                          title: 'Address copied',
-                          text: `${route.walletLabel} on ${route.chainName}`
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-                    {chain && (
-                      <Button
-                        size="sm"
-                        icon={<IconExternal size={13} />}
-                        onClick={() => void window.goldfelty.app.openExternal(`${chain.explorer}/address/${route.address}`)}
-                      >
-                        View on {chain.name}
-                      </Button>
-                    )}
-                    <CopyButton value={`${symbol}:${route.address}@${route.chainId}`} label="Copy payment link" />
-                  </div>
-
-                  {route.requiresDeployment && (
-                    <Field hint="">
-                      <p className="muted" style={{ fontSize: 12.5, maxWidth: 46 * 8 }}>
-                        <IconAlert size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
-                        Not deployed on {route.chainName} yet. Receiving works anyway; the contract goes up on your first send.
-                      </p>
-                    </Field>
-                  )}
-                </div>
-              </div>
-            </Card>
-          )}
+          </Field>
         </div>
+
+        <aside className="review receive-card" aria-label="Address">
+          {!route ? (
+            <p className="muted">{routes.length > 1 ? 'Choose where it should arrive to see the address.' : 'Loading…'}</p>
+          ) : (
+            <>
+              <div className="qr">{qr ? <img src={qr} width={200} height={200} alt={`QR code for ${route.address}`} /> : null}</div>
+              <div className="address-block" aria-label={route.address}>
+                {groupedAddress(route.address).map((g, i) => (
+                  <span key={i}>{g}</span>
+                ))}
+              </div>
+              <Button variant="primary" className="wide" onClick={() => void copy()}>
+                {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />} {copied ? 'Copied' : 'Copy address'}
+              </Button>
+              <p className="muted small">
+                {symbol} on <strong>{route.chainName}</strong> only. This is {route.walletLabel}’s address in {route.providerName ?? 'your wallet'}; open
+                that wallet and check it shows the same characters before sharing it.
+              </p>
+              {route.chainName !== 'Ethereum' ? (
+                <Notice>Sending from a different network to this address can strand the funds. Tell the sender to use {route.chainName}.</Notice>
+              ) : null}
+            </>
+          )}
+        </aside>
       </div>
     </div>
   )
+}
+
+function keyOf(r: RouteOption): string {
+  return `${r.walletId}|${r.chainId}`
 }

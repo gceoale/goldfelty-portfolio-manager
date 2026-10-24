@@ -1,222 +1,148 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import type { PortfolioSnapshot } from '@shared/types.js'
-import { money } from '../lib/format.js'
+import type { HistoryRange, PortfolioSnapshot } from '@shared/types.ts'
+import { compactMoney, dateTime, money, shortDate } from '../lib/format.ts'
 
-interface Props {
-  data: PortfolioSnapshot[]
-  currency: string
-  /** Positive periods draw green, negative red — the colour is the headline. */
-  positive: boolean
-  height?: number
-  /** Drop the gradient and gridlines: a line, a baseline, nothing else. */
-  minimal?: boolean
+const PAD = { top: 10, right: 64, bottom: 26, left: 0 }
+
+/** Round tick values: 1, 2, 2.5 or 5 times a power of ten. */
+function niceTicks(min: number, max: number, count = 4): number[] {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return []
+  if (min === max) {
+    const pad = Math.abs(min) * 0.05 || 1
+    min -= pad
+    max += pad
+  }
+  const raw = (max - min) / count
+  const mag = 10 ** Math.floor(Math.log10(raw))
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw
+  // Start at or below the lowest value and end at or above the highest, so
+  // the line never leaves the plotted area.
+  const ticks: number[] = []
+  const first = Math.floor(min / step) * step
+  for (let v = first; ticks.length < 12; v += step) {
+    ticks.push(Number(v.toFixed(10)))
+    if (v >= max - step * 1e-9) break
+  }
+  return ticks
 }
 
-const PAD = { top: 12, right: 4, bottom: 18, left: 4 }
-
 /**
- * Portfolio value over time. Deliberately axis-light: the number that matters is
- * already in the hero, so the chart's job is shape, direction and a precise
- * read-out on hover.
+ * Portfolio value over time. One series, so no legend: the page title names
+ * it. Value axis on the right, dates below, a crosshair and readout on hover.
  */
-export function AreaChart({ data, currency, positive, height = 172, minimal = false }: Props): JSX.Element {
-  const ref = useRef<SVGSVGElement | null>(null)
+export function ValueChart({
+  data,
+  currency,
+  height = 220,
+  hidden = false
+}: {
+  data: PortfolioSnapshot[]
+  currency: string
+  range?: HistoryRange
+  height?: number
+  hidden?: boolean
+}): JSX.Element {
+  const wrap = useRef<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState(640)
   const [hover, setHover] = useState<number | null>(null)
-  const [width, setWidth] = useState(720)
 
-  // Track the real rendered width so the curve reflows with the window.
   useEffect(() => {
-    const node = ref.current
-    if (!node || typeof ResizeObserver === 'undefined') return
+    const node = wrap.current
+    if (!node) return
     const observer = new ResizeObserver(([entry]) => {
-      const next = entry.contentRect.width
-      if (next > 0) setWidth((current) => (Math.abs(current - next) > 1 ? next : current))
+      const w = Math.round(entry.contentRect.width)
+      if (w > 0) setWidth(w)
     })
     observer.observe(node)
     return () => observer.disconnect()
   }, [])
 
-  const measured = useMemo(() => {
-    const points = data.length >= 2 ? data : []
-    if (points.length === 0) return null
-
-    const values = points.map((p) => p.total)
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    // A flat line at the vertical centre beats a divide-by-zero.
-    const span = max - min || Math.max(max, 1) * 0.08
-    const lo = min - span * 0.12
-    const hi = max + span * 0.12
-
-    const innerW = width - PAD.left - PAD.right
+  const geo = useMemo(() => {
+    if (data.length < 2) return null
+    const values = data.map((p) => p.total)
+    const ticks = niceTicks(Math.min(...values), Math.max(...values))
+    const lo = ticks[0]
+    const hi = ticks[ticks.length - 1]
+    const t0 = data[0].at
+    const t1 = data[data.length - 1].at
+    const innerW = Math.max(10, width - PAD.left - PAD.right)
     const innerH = height - PAD.top - PAD.bottom
-    const x = (i: number): number => PAD.left + (points.length === 1 ? innerW / 2 : (i / (points.length - 1)) * innerW)
-    const y = (v: number): number => PAD.top + innerH - ((v - lo) / (hi - lo)) * innerH
-
-    const coords = points.map((p, i) => ({ x: x(i), y: y(p.total), snapshot: p }))
-
-    // Catmull-Rom → cubic Bézier: a smooth line without the wild overshoot a
-    // naive spline gives on spiky balance data.
-    let line = `M ${coords[0].x.toFixed(2)} ${coords[0].y.toFixed(2)}`
-    for (let i = 0; i < coords.length - 1; i++) {
-      const p0 = coords[Math.max(0, i - 1)]
-      const p1 = coords[i]
-      const p2 = coords[i + 1]
-      const p3 = coords[Math.min(coords.length - 1, i + 2)]
-      const c1x = p1.x + (p2.x - p0.x) / 6
-      const c1y = p1.y + (p2.y - p0.y) / 6
-      const c2x = p2.x - (p3.x - p1.x) / 6
-      const c2y = p2.y - (p3.y - p1.y) / 6
-      line += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`
-    }
-    const area = `${line} L ${coords[coords.length - 1].x.toFixed(2)} ${height - PAD.bottom} L ${coords[0].x.toFixed(2)} ${height - PAD.bottom} Z`
-
-    return { coords, line, area, lo, hi }
+    const x = (at: number): number => PAD.left + (t1 === t0 ? innerW / 2 : ((at - t0) / (t1 - t0)) * innerW)
+    const y = (v: number): number => PAD.top + innerH - ((v - lo) / (hi - lo || 1)) * innerH
+    const points = data.map((p) => ({ x: x(p.at), y: y(p.total), p }))
+    const line = points.map((pt, i) => `${i ? 'L' : 'M'}${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ')
+    const area = `${line} L${points[points.length - 1].x.toFixed(1)} ${PAD.top + innerH} L${points[0].x.toFixed(1)} ${PAD.top + innerH} Z`
+    const dateTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ at: t0 + (t1 - t0) * f, x: PAD.left + innerW * f }))
+    return { ticks, y, points, line, area, dateTicks, innerW, innerH }
   }, [data, width, height])
 
-  if (!measured) {
+  if (!geo) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          color: 'var(--ink-3)',
-          fontSize: 13,
-          borderBottom: '1px solid var(--rule)',
-          paddingBottom: 12
-        }}
-      >
-        A line appears here once there are a few readings to compare.
+      <div className="chart chart-empty" ref={wrap} style={{ height }}>
+        <span>Not enough history yet. Goldfelty records a point each time it refreshes.</span>
       </div>
     )
   }
 
-  const stroke = positive ? 'var(--positive)' : 'var(--negative)'
-  const gradientId = positive ? 'grad-pos' : 'grad-neg'
-  const active = hover !== null ? measured.coords[hover] : null
-
-  const onMove = (event: React.MouseEvent<SVGSVGElement>): void => {
-    const rect = ref.current?.getBoundingClientRect()
-    if (!rect) return
-    if (rect.width !== width) setWidth(rect.width)
-    const relative = event.clientX - rect.left
-    let nearest = 0
-    let best = Infinity
-    measured.coords.forEach((coord, i) => {
-      const distance = Math.abs(coord.x - relative)
-      if (distance < best) {
-        best = distance
-        nearest = i
-      }
-    })
-    setHover(nearest)
+  const onMove = (e: React.PointerEvent<SVGSVGElement>): void => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const px = e.clientX - rect.left
+    let best = 0
+    for (let i = 1; i < geo.points.length; i++) {
+      if (Math.abs(geo.points[i].x - px) < Math.abs(geo.points[best].x - px)) best = i
+    }
+    setHover(best)
   }
 
+  const h = hover === null ? null : geo.points[hover]
+  const span = data[data.length - 1].at - data[0].at
+  const first = data[0].total
+  const last = data[data.length - 1].total
+
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="chart" ref={wrap}>
       <svg
-        ref={(node) => {
-          ref.current = node
-          const measuredWidth = node?.getBoundingClientRect().width
-          if (measuredWidth && Math.abs(measuredWidth - width) > 1) setWidth(measuredWidth)
-        }}
-        width="100%"
+        width={width}
         height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
         role="img"
-        aria-label="Portfolio value over time"
+        aria-label={`Portfolio value from ${money(first, currency)} to ${money(last, currency)} over the selected period`}
+        onPointerMove={onMove}
+        onPointerLeave={() => setHover(null)}
       >
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={stroke} stopOpacity="0.26" />
-            <stop offset="100%" stopColor={stroke} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
-        {!minimal &&
-          [0.25, 0.5, 0.75].map((fraction) => (
-            <line
-              key={fraction}
-              x1={PAD.left}
-              x2={width - PAD.right}
-              y1={PAD.top + (height - PAD.top - PAD.bottom) * fraction}
-              y2={PAD.top + (height - PAD.top - PAD.bottom) * fraction}
-              stroke="var(--rule)"
-              strokeDasharray="3 5"
-            />
-          ))}
-
-        {/* One hairline the series sits on, instead of a grid. */}
-        {minimal && (
-          <line
-            x1={PAD.left}
-            x2={width - PAD.right}
-            y1={height - PAD.bottom}
-            y2={height - PAD.bottom}
-            stroke="var(--rule)"
-          />
-        )}
-
-        {!minimal && <path d={measured.area} fill={`url(#${gradientId})`} />}
-        <path
-          d={measured.line}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={minimal ? 1.5 : 2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* Where the series ends, which is the only point worth marking. */}
-        {minimal && !active && (
-          <circle
-            cx={measured.coords[measured.coords.length - 1].x}
-            cy={measured.coords[measured.coords.length - 1].y}
-            r={2.5}
-            fill={stroke}
-          />
-        )}
-
-        {active && (
-          <>
-            <line x1={active.x} x2={active.x} y1={PAD.top} y2={height - PAD.bottom} stroke="var(--border-strong)" />
-            <circle cx={active.x} cy={active.y} r={4.5} fill="var(--bg-surface)" stroke={stroke} strokeWidth={2} />
-          </>
-        )}
+        {geo.ticks.map((t) => (
+          <g key={t}>
+            <line className="chart-grid" x1={PAD.left} x2={PAD.left + geo.innerW} y1={geo.y(t)} y2={geo.y(t)} />
+            <text className="chart-axis" x={PAD.left + geo.innerW + 8} y={geo.y(t)} dy="0.32em">
+              {hidden ? '•••' : compactMoney(t, currency)}
+            </text>
+          </g>
+        ))}
+        {geo.dateTicks.map((d, i) => (
+          <text
+            key={i}
+            className="chart-axis"
+            x={d.x}
+            y={PAD.top + geo.innerH + 18}
+            textAnchor={i === 0 ? 'start' : i === geo.dateTicks.length - 1 ? 'end' : 'middle'}
+          >
+            {shortDate(d.at, span)}
+          </text>
+        ))}
+        <path className="chart-area" d={geo.area} />
+        <path className="chart-line" d={geo.line} />
+        {h ? (
+          <g>
+            <line className="chart-cross" x1={h.x} x2={h.x} y1={PAD.top} y2={PAD.top + geo.innerH} />
+            <circle className="chart-point" cx={h.x} cy={h.y} r={4} />
+          </g>
+        ) : null}
       </svg>
-
-      {active && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: Math.min(Math.max(active.x - 66, 0), Math.max(width - 132, 0)),
-            width: 132,
-            padding: '7px 9px',
-            background: 'var(--bg-overlay)',
-            border: '1px solid var(--border-default)',
-            borderRadius: 'var(--radius-sm)',
-            boxShadow: 'var(--shadow-md)',
-            pointerEvents: 'none',
-            textAlign: 'center'
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 620, fontVariantNumeric: 'tabular-nums' }}>
-            {money(active.snapshot.total, currency)}
-          </div>
-          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-            {new Date(active.snapshot.at).toLocaleString(undefined, {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit'
-            })}
-          </div>
+      {h ? (
+        <div className="chart-tip" style={{ left: Math.min(Math.max(h.x, 70), width - PAD.right - 70), top: 0 }}>
+          <strong>{hidden ? '•••••' : money(h.p.total, currency)}</strong>
+          <span>{dateTime(h.p.at)}</span>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -1,66 +1,37 @@
 import { randomUUID } from 'node:crypto'
 import { formatUnits, getAddress, isAddress, parseUnits } from 'ethers'
 import type { Store } from './store.ts'
-import type { Vault } from './vault.ts'
 import { providerFor } from './rpc.ts'
 import { fetchPrices } from './prices.ts'
-import {
-  FACTORY_ADDRESS,
-  deploymentCalldata,
-  encodeNativeTransfer,
-  encodeTokenTransfer,
-  erc20Interface
-} from './smartAccount.ts'
+import { erc20Interface } from './erc20.ts'
+import { currentFeeBps, planFee, type FeePlan } from './fees.ts'
+import { MAX_FEE_BPS } from '../shared/fees.ts'
 import { TOKEN_BY_KEY, TOKENS, getChain } from '../shared/chains.ts'
-import type { Balance, SendQuote, SendResult, TokenDef, TransferRecord, Wallet } from '../shared/types.ts'
-import { isExternal } from '../shared/types.ts'
+import { canSign } from '../shared/types.ts'
+import type { Balance, RouteOption, SendQuote, SendResult, Settings, TokenDef, TransferRecord, Wallet } from '../shared/types.ts'
 
 /**
- * How a transfer reaches the chain when the keys are not ours. The IPC layer
- * supplies this, wired to WalletConnect or the extension bridge, so this module
- * stays free of transport concerns.
+ * Sending, from wallets the user owns.
+ *
+ * Goldfelty builds the transaction and hands it to the wallet app, which
+ * shows it to the user and signs it. Nothing here can move funds on its own.
  */
-export interface ExternalSender {
-  send(
-    wallet: Wallet,
-    chainId: number,
-    tx: { from: string; to: string; value?: string; data?: string }
-  ): Promise<string>
+
+/** Where transactions go once built: the connection manager, in practice. */
+export interface Sender {
+  isReachable(connectionId: string): boolean
+  sendTransaction(connectionId: string, chainId: number, tx: { from: string; to: string; value?: string; data?: string }): Promise<string>
 }
 
-/** Gas allowance when estimation is unavailable, chosen to cover an ERC-20 transfer. */
+/** Gas allowance when estimation fails, enough for an ERC-20 transfer. */
 const FALLBACK_GAS = 120_000n
-const DEPLOY_GAS = 260_000n
-
-export interface RouteOption {
-  walletId: string
-  walletLabel: string
-  walletColor: string
-  walletKind: Wallet['kind']
-  chainId: number
-  chainName: string
-  chainColor: string
-  tokenKey: string
-  address: string
-  amount: number
-  value: number
-  /** False when this route cannot cover the requested amount. */
-  sufficient: boolean
-  /** True when the account contract is not yet deployed on this chain. */
-  requiresDeployment: boolean
-}
 
 /**
- * Every wallet/chain pair that can send a given symbol. When this returns more
- * than one option the UI must make the user pick — silently choosing a route
- * would mean sending from a wallet the user did not intend.
+ * Every wallet and chain that can send `symbol`. With more than one, the UI
+ * makes the user choose; picking one silently would mean sending from a
+ * wallet they didn't mean.
  */
-export function routesForSymbol(
-  store: Store,
-  balances: Balance[],
-  symbol: string,
-  requiredAmount = 0
-): RouteOption[] {
+export function routesForSymbol(store: Store, sender: Sender, balances: Balance[], symbol: string, requiredAmount = 0): RouteOption[] {
   const upper = symbol.toUpperCase()
   const options: RouteOption[] = []
 
@@ -68,63 +39,57 @@ export function routesForSymbol(
     const token = TOKEN_BY_KEY.get(balance.tokenKey)
     if (!token || token.symbol.toUpperCase() !== upper) continue
     const wallet = store.wallet(balance.walletId)
-    if (!wallet || wallet.archived) continue
-    const chain = getChain(token.chainId)
-    options.push({
-      walletId: wallet.id,
-      walletLabel: wallet.label,
-      walletColor: wallet.color,
-      walletKind: wallet.kind,
-      chainId: chain.id,
-      chainName: chain.name,
-      chainColor: chain.color,
-      tokenKey: token.key,
-      address: wallet.address,
-      amount: balance.amount,
-      value: balance.value,
-      sufficient: balance.amount >= requiredAmount,
-      requiresDeployment: !wallet.deployedOn.includes(chain.id)
-    })
+    if (!wallet || wallet.archived || !canSign(wallet.kind)) continue
+    options.push(routeFor(wallet, token, balance.amount, balance.value, requiredAmount, sender))
   }
 
   return options.sort(
     (a, b) =>
+      Number(b.reachable) - Number(a.reachable) ||
       Number(b.sufficient) - Number(a.sufficient) ||
-      Number(a.requiresDeployment) - Number(b.requiresDeployment) ||
       b.amount - a.amount
   )
 }
 
-/** Wallets that can receive a symbol, for the Receive tab's routing choice. */
-export function receiveRoutes(store: Store, symbol: string): RouteOption[] {
+/** Every connected wallet and chain that can receive `symbol`. */
+export function receiveRoutes(store: Store, sender: Sender, symbol: string): RouteOption[] {
   const upper = symbol.toUpperCase()
   const tokens = TOKENS.filter((t) => t.symbol.toUpperCase() === upper)
   const options: RouteOption[] = []
 
   for (const wallet of store.activeWallets()) {
+    // A read-only address from an earlier version must never be handed out:
+    // nothing can move funds sent there.
+    if (!canSign(wallet.kind)) continue
     for (const token of tokens) {
       if (!wallet.chainIds.includes(token.chainId)) continue
-      const chain = getChain(token.chainId)
       const cached = store.cachedBalance(wallet.id, token.key)
       const amount = cached ? Number(formatUnits(cached.raw, token.decimals)) : 0
-      options.push({
-        walletId: wallet.id,
-        walletLabel: wallet.label,
-        walletColor: wallet.color,
-        walletKind: wallet.kind,
-        chainId: chain.id,
-        chainName: chain.name,
-        chainColor: chain.color,
-        tokenKey: token.key,
-        address: wallet.address,
-        amount,
-        value: 0,
-        sufficient: true,
-        requiresDeployment: !wallet.deployedOn.includes(chain.id)
-      })
+      options.push(routeFor(wallet, token, amount, 0, 0, sender))
     }
   }
-  return options.sort((a, b) => a.walletLabel.localeCompare(b.walletLabel) || a.chainId - b.chainId)
+  return options.sort((a, b) => a.walletLabel.localeCompare(b.walletLabel) || a.chainName.localeCompare(b.chainName))
+}
+
+function routeFor(wallet: Wallet, token: TokenDef, amount: number, value: number, required: number, sender: Sender): RouteOption {
+  const chain = getChain(token.chainId)
+  return {
+    walletId: wallet.id,
+    walletLabel: wallet.label,
+    walletColor: wallet.color,
+    walletKind: wallet.kind,
+    providerName: wallet.providerName,
+    providerId: wallet.providerId,
+    chainId: chain.id,
+    chainName: chain.name,
+    chainColor: chain.color,
+    tokenKey: token.key,
+    address: wallet.address,
+    amount,
+    value,
+    sufficient: amount >= required,
+    reachable: !!wallet.connectionId && sender.isReachable(wallet.connectionId)
+  }
 }
 
 export class SendError extends Error {
@@ -139,152 +104,120 @@ function requireSendable(store: Store, walletId: string, tokenKey: string): { wa
   const wallet = store.wallet(walletId)
   if (!wallet) throw new SendError('That wallet is no longer connected.', 'NO_WALLET')
   if (wallet.archived) throw new SendError('That wallet is archived.', 'ARCHIVED')
-  if (wallet.kind === 'watch') {
-    throw new SendError('Watch-only wallets cannot send. Choose a different route.', 'WATCH_ONLY')
-  }
-  if (isExternal(wallet.kind) && !wallet.connectionId) {
-    throw new SendError(
-      `${wallet.providerName ?? 'That wallet'} is no longer connected. Reconnect it in Settings → Wallets.`,
-      'DISCONNECTED'
-    )
-  }
-  if (wallet.kind === 'smart' && wallet.derivationIndex === null) {
-    throw new SendError('That wallet has no signing key.', 'NO_KEY')
+  if (!canSign(wallet.kind)) throw new SendError('Nothing can sign for that address.', 'READ_ONLY')
+  if (!wallet.connectionId) {
+    throw new SendError(`Reconnect ${wallet.providerName ?? 'this wallet'} in Settings to send from it.`, 'DISCONNECTED')
   }
   const token = TOKEN_BY_KEY.get(tokenKey)
   if (!token) throw new SendError('Unknown token.', 'NO_TOKEN')
   if (!wallet.chainIds.includes(token.chainId)) {
-    throw new SendError(`${wallet.label} is not connected on ${getChain(token.chainId).name}.`, 'CHAIN_OFF')
+    throw new SendError(`${wallet.label} isn’t set up for ${getChain(token.chainId).name}.`, 'CHAIN_OFF')
   }
   return { wallet, token }
 }
 
-/**
- * The transaction an external wallet is asked to send. Unlike the smart-account
- * path there is no `execute` wrapper: the user's own EOA is the sender, so this
- * is a plain transfer they would recognise in their wallet's prompt.
- */
-function buildExternalTx(
-  wallet: Wallet,
-  token: TokenDef,
-  to: string,
-  units: bigint
-): { from: string; to: string; value?: string; data?: string } {
-  if (token.address === null) {
-    return { from: wallet.address, to, value: `0x${units.toString(16)}` }
+function parseAmount(amount: string, token: TokenDef): bigint {
+  let units: bigint
+  try {
+    units = parseUnits(amount.trim(), token.decimals)
+  } catch {
+    throw new SendError('That amount isn’t a number Goldfelty can use.', 'BAD_AMOUNT')
   }
-  return {
-    from: wallet.address,
-    to: token.address,
-    data: erc20Interface.encodeFunctionData('transfer', [to, units])
-  }
+  if (units <= 0n) throw new SendError('Enter an amount above zero.', 'BAD_AMOUNT')
+  return units
 }
 
-function buildCalldata(token: TokenDef, to: string, units: bigint): { to: string; data: string; value: bigint } {
-  return token.address === null
-    ? { to: '', data: encodeNativeTransfer(to, units), value: 0n }
-    : { to: '', data: encodeTokenTransfer(token.address, to, units), value: 0n }
+function parseRecipient(to: string): string {
+  if (!isAddress(to.trim())) throw new SendError('That address isn’t valid.', 'BAD_RECIPIENT')
+  return getAddress(to.trim())
+}
+
+/** The transaction the wallet is asked to send: a plain transfer it can describe. */
+export function buildTransaction(wallet: Wallet, token: TokenDef, to: string, units: bigint): { from: string; to: string; value?: string; data?: string } {
+  if (token.address === null) return { from: wallet.address, to, value: `0x${units.toString(16)}` }
+  return { from: wallet.address, to: token.address, value: '0x0', data: erc20Interface.encodeFunctionData('transfer', [to, units]) }
 }
 
 /**
- * Price a transfer without sending it: gas, fiat value, and every warning worth
- * showing before the user commits.
+ * Address poisoning: scammers send dust from an address that shares the
+ * first and last characters of one you use, hoping you copy it from your
+ * history. Flag a recipient that looks like a known address but isn't one.
  */
+export function lookalikeOf(to: string, known: string[]): string | null {
+  const t = to.toLowerCase()
+  for (const candidate of known) {
+    const c = candidate.toLowerCase()
+    if (c === t) return null
+  }
+  for (const candidate of known) {
+    const c = candidate.toLowerCase()
+    if (c.slice(2, 6) === t.slice(2, 6) && c.slice(-4) === t.slice(-4)) return candidate
+  }
+  return null
+}
+
+/** Price a transfer and collect anything worth warning about, without sending. */
 export async function quoteTransfer(
   store: Store,
-  vault: Vault,
+  settings: Settings,
   input: { walletId: string; tokenKey: string; to: string; amount: string }
 ): Promise<SendQuote> {
   const { wallet, token } = requireSendable(store, input.walletId, input.tokenKey)
   const chain = getChain(token.chainId)
-  if (!isAddress(input.to)) throw new SendError('The recipient address is not valid.', 'BAD_RECIPIENT')
-  const to = getAddress(input.to)
-
-  let units: bigint
-  try {
-    units = parseUnits(input.amount, token.decimals)
-  } catch {
-    throw new SendError('That amount is not a valid number.', 'BAD_AMOUNT')
-  }
-  if (units <= 0n) throw new SendError('Enter an amount greater than zero.', 'BAD_AMOUNT')
-
+  const to = parseRecipient(input.to)
+  const units = parseAmount(input.amount, token)
   const warnings: string[] = []
-  const external = isExternal(wallet.kind)
-  // An EOA is already "deployed" everywhere; only our own contract accounts
-  // need bringing into existence on first use.
-  const requiresDeployment = !external && !wallet.deployedOn.includes(chain.id)
-  if (external) {
-    warnings.push(
-      `${wallet.providerName ?? 'Your wallet'} will ask you to approve this transfer. Nothing is sent until you do.`
-    )
-  }
-  if (requiresDeployment) {
-    warnings.push(
-      `${wallet.label} has not been used on ${chain.name} yet. The first transfer also deploys the account contract, which costs extra gas.`
-    )
-  }
-  if (to.toLowerCase() === wallet.address.toLowerCase()) {
-    warnings.push('The recipient is this wallet. The transfer would return to where it started.')
-  }
+  const fee = planFee(token, units, wallet.address, await currentFeeBps())
+
+  if (to.toLowerCase() === wallet.address.toLowerCase()) warnings.push('You’re sending to the same wallet it comes from.')
   if (token.address && to.toLowerCase() === token.address.toLowerCase()) {
-    warnings.push('The recipient is the token contract itself. Funds sent there are normally unrecoverable.')
+    warnings.push(`That’s the ${token.symbol} contract itself. Tokens sent to it are almost always lost.`)
+  }
+  if (store.wallets.some((w) => w.kind === 'readonly' && w.address.toLowerCase() === to.toLowerCase())) {
+    warnings.push('That address was created by an earlier version of Goldfelty. Nothing can move funds out of it.')
+  }
+  const known = [...store.wallets.map((w) => w.address), ...store.transfers.map((t) => t.counterparty)]
+  const lookalike = lookalikeOf(to, known)
+  if (lookalike) {
+    warnings.push(
+      `This address looks like ${lookalike.slice(0, 6)}…${lookalike.slice(-4)}, which you’ve used before, but it’s a different address. ` +
+        'Scammers create lookalikes to catch copy and paste. Check every character.'
+    )
   }
 
-  const settings = store.settings
-  const call = buildCalldata(token, to, units)
+  const tx = buildTransaction(wallet, token, to, units)
   let gasLimit = FALLBACK_GAS
   let gasPrice = 0n
-  let ownerBalance = 0n
-
+  let nativeBalance = 0n
   try {
     const provider = providerFor(chain.id, settings)
-    // For an external wallet the sender is the user's own address and it pays
-    // its own gas; for a smart account it is the derived owner key.
-    const payer = external ? wallet.address : vault.ownerAddress(wallet.derivationIndex!)
-    const [feeData, balance] = await Promise.all([provider.getFeeData(), provider.getBalance(payer)])
-    ownerBalance = balance
-    gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n
-
-    if (external) {
-      const raw = buildExternalTx(wallet, token, to, units)
-      try {
-        gasLimit = await provider.estimateGas(raw)
-        gasLimit = (gasLimit * 120n) / 100n
-      } catch {
-        warnings.push('Gas could not be estimated precisely; the figure below is an upper bound.')
-      }
-    } else if (!requiresDeployment) {
-      try {
-        gasLimit = await provider.estimateGas({ from: payer, to: wallet.address, data: call.data, value: call.value })
-        gasLimit = (gasLimit * 120n) / 100n
-      } catch {
-        warnings.push('Gas could not be estimated precisely; the figure below is an upper bound.')
-      }
-    } else {
-      gasLimit = FALLBACK_GAS + DEPLOY_GAS
+    const [fees, balance] = await Promise.all([provider.getFeeData(), provider.getBalance(wallet.address)])
+    nativeBalance = balance
+    gasPrice = fees.maxFeePerGas ?? fees.gasPrice ?? 0n
+    try {
+      gasLimit = ((await provider.estimateGas(tx)) * 120n) / 100n
+    } catch {
+      warnings.push('The network couldn’t simulate this transfer. It may fail; your wallet will say more.')
     }
   } catch {
-    warnings.push(`${chain.name} could not be reached, so the network fee is an estimate.`)
+    warnings.push(`Couldn’t reach ${chain.name}, so the fee is a guess.`)
   }
 
-  const feeUnits = gasLimit * gasPrice
-  const networkFee = Number(formatUnits(feeUnits, chain.decimals))
-  if (gasPrice > 0n && ownerBalance < feeUnits) {
-    const who = external ? wallet.label : `The signer for ${wallet.label}`
-    warnings.push(
-      `${who} holds ${Number(formatUnits(ownerBalance, chain.decimals)).toFixed(6)} ${chain.nativeSymbol} on ${chain.name}, which is below the estimated fee. Top it up before sending.`
-    )
+  // The Goldfelty fee is a second transaction, so it costs gas too.
+  const gasUnits = gasLimit * gasPrice * (fee ? 2n : 1n)
+  const networkFee = Number(formatUnits(gasUnits, chain.decimals))
+  const nativeNeeded = gasUnits + (token.address === null ? units + (fee?.units ?? 0n) : 0n)
+  if (gasPrice > 0n && nativeBalance < nativeNeeded) {
+    warnings.push(`${wallet.label} doesn’t have enough ${chain.nativeSymbol} on ${chain.name} to cover this and the fees.`)
   }
 
-  const priceIds = [token.priceId, TOKENS.find((t) => t.chainId === chain.id && t.address === null)?.priceId].filter(
-    (id): id is string => !!id
-  )
-  const prices = await fetchPrices(priceIds, settings, store)
-  const tokenPrice = token.priceId ? (prices[token.priceId]?.price ?? 0) : 0
   const nativePriceId = TOKENS.find((t) => t.chainId === chain.id && t.address === null)?.priceId
-  const nativePrice = nativePriceId ? (prices[nativePriceId]?.price ?? 0) : 0
+  const priceIds = [token.priceId, nativePriceId].filter((id): id is string => !!id)
+  const prices = await fetchPrices(priceIds, settings, store)
   const amount = Number(formatUnits(units, token.decimals))
 
+  const tokenPrice = token.priceId ? (prices[token.priceId]?.price ?? 0) : 0
+  const feeAmount = fee ? Number(formatUnits(fee.units, token.decimals)) : 0
   return {
     tokenKey: token.key,
     symbol: token.symbol,
@@ -292,117 +225,60 @@ export async function quoteTransfer(
     chainName: chain.name,
     walletId: wallet.id,
     walletLabel: wallet.label,
+    providerName: wallet.providerName ?? 'your wallet',
     from: wallet.address,
     to,
     amount,
     networkFee,
     networkFeeSymbol: chain.nativeSymbol,
-    networkFeeValue: networkFee * nativePrice,
+    networkFeeValue: networkFee * (nativePriceId ? (prices[nativePriceId]?.price ?? 0) : 0),
     totalValue: amount * tokenPrice,
-    requiresDeployment,
+    fee: fee ? { bps: fee.bps, amount: feeAmount, symbol: token.symbol, value: feeAmount * tokenPrice, recipient: fee.recipient } : null,
     warnings
   }
 }
 
 /**
- * Execute a quoted transfer. The password is re-checked here rather than
- * trusting an unlocked session, so an unattended machine cannot move funds.
+ * Hand the transfer to the wallet app. The user approves it there; there is
+ * no password step here because Goldfelty holds nothing that could send.
  */
 export async function executeTransfer(
   store: Store,
-  vault: Vault,
-  input: { walletId: string; tokenKey: string; to: string; amount: string; password: string },
-  externalSender?: ExternalSender
+  settings: Settings,
+  sender: Sender,
+  input: { walletId: string; tokenKey: string; to: string; amount: string; feeBps: number }
 ): Promise<SendResult> {
-  const preview = store.wallet(input.walletId)
-  // An external wallet prompts the user in its own app, which is the
-  // confirmation. Demanding our password too would be theatre, since we hold
-  // no key that could move those funds.
-  if (store.settings.confirmBeforeSend && preview && !isExternal(preview.kind)) {
-    const ok = await vault.verify(input.password)
-    if (!ok) throw new SendError('Incorrect password.', 'WRONG_PASSWORD')
-  }
-
   const { wallet, token } = requireSendable(store, input.walletId, input.tokenKey)
   const chain = getChain(token.chainId)
-  if (!isAddress(input.to)) throw new SendError('The recipient address is not valid.', 'BAD_RECIPIENT')
-  const to = getAddress(input.to)
-  const units = parseUnits(input.amount, token.decimals)
-  if (units <= 0n) throw new SendError('Enter an amount greater than zero.', 'BAD_AMOUNT')
+  const to = parseRecipient(input.to)
+  const units = parseAmount(input.amount, token)
 
-  // ---- external wallets: ask the user's own app to send it --------------
-  if (isExternal(wallet.kind)) {
-    if (!externalSender) throw new SendError('No way to reach that wallet.', 'NO_TRANSPORT')
-    const raw = buildExternalTx(wallet, token, to, units)
-    let hash: string
-    try {
-      hash = await externalSender.send(wallet, chain.id, raw)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      // A rejection in the wallet is a normal outcome, not a failure to explain.
-      throw new SendError(
-        /reject|denied|cancell?ed/i.test(message)
-          ? `${wallet.providerName ?? 'Your wallet'} rejected the transfer.`
-          : `The transfer could not be sent: ${message}`,
-        'EXTERNAL_SEND_FAILED'
-      )
-    }
-    return recordTransfer(store, wallet, token, chain, to, units, hash)
+  // Charge exactly the rate the user saw on the review screen, never more.
+  const shown = Number(input.feeBps)
+  if (!Number.isInteger(shown) || shown < 0 || shown > MAX_FEE_BPS) throw new SendError('Review the transfer again.', 'FEE_CHANGED')
+  const fee = planFee(token, units, wallet.address, await currentFeeBps())
+  if ((fee?.bps ?? 0) > shown) {
+    throw new SendError('Goldfelty’s fee changed since you reviewed this. Review it again before sending.', 'FEE_CHANGED')
   }
 
-  const provider = providerFor(chain.id, store.settings)
-  const signer = vault.ownerSigner(wallet.derivationIndex!, provider)
-
-  // First use on a chain: deploy the counterfactual account before using it.
-  if (!wallet.deployedOn.includes(chain.id)) {
-    const code = await provider.getCode(wallet.address)
-    if (code === '0x') {
-      const deployTx = await signer.sendTransaction({
-        to: FACTORY_ADDRESS,
-        data: deploymentCalldata(wallet.ownerAddress!, BigInt(wallet.derivationIndex!))
-      })
-      await deployTx.wait(1)
-    }
-    store.updateWallet(wallet.id, { deployedOn: [...new Set([...wallet.deployedOn, chain.id])] })
-  }
-
-  const call = buildCalldata(token, to, units)
-  let response
+  const tx = buildTransaction(wallet, token, to, units)
+  let hash: string
   try {
-    response = await signer.sendTransaction({ to: wallet.address, data: call.data, value: call.value })
+    hash = await sender.sendTransaction(wallet.connectionId!, chain.id, tx)
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new SendError(`The network rejected the transfer: ${message}`)
+    const err = error as Error & { code?: string | number }
+    if (err.code === 4001 || /reject|denied|cancell?ed|declined/i.test(err.message)) {
+      throw new SendError(`You declined it in ${wallet.providerName ?? 'your wallet'}. Nothing was sent.`, 'DECLINED')
+    }
+    if (err.code === 'CHAIN_MISMATCH' || err.code === 'BRIDGE_CLOSED' || err.code === 'FRAME_UNAVAILABLE') {
+      throw new SendError(err.message, String(err.code))
+    }
+    throw new SendError(`It wasn’t sent: ${err.message}`, 'WALLET_ERROR')
   }
 
-  const result = await recordTransfer(store, wallet, token, chain, to, units, response.hash)
-
-  // Follow the receipt so the history row settles itself.
-  void response
-    .wait(1)
-    .then((receipt) => store.updateTransfer(result.recordId, { status: receipt?.status === 1 ? 'confirmed' : 'failed' }))
-    .catch(() => store.updateTransfer(result.recordId, { status: 'failed' }))
-
-  return result
-}
-
-/**
- * Log an outgoing transfer and describe it back to the caller. Shared by the
- * smart-account and external-wallet paths so both produce identical history.
- */
-async function recordTransfer(
-  store: Store,
-  wallet: Wallet,
-  token: TokenDef,
-  chain: ReturnType<typeof getChain>,
-  to: string,
-  units: bigint,
-  hash: string
-): Promise<SendResult & { recordId: string }> {
   const amount = Number(formatUnits(units, token.decimals))
-  const prices = token.priceId ? await fetchPrices([token.priceId], store.settings, store) : {}
-  const value = amount * (token.priceId ? (prices[token.priceId]?.price ?? 0) : 0)
-
+  const prices = token.priceId ? await fetchPrices([token.priceId], settings, store) : {}
+  const price = token.priceId ? (prices[token.priceId]?.price ?? 0) : 0
   const record: TransferRecord = {
     id: randomUUID(),
     direction: 'out',
@@ -410,35 +286,119 @@ async function recordTransfer(
     chainId: chain.id,
     symbol: token.symbol,
     amount,
-    value,
+    value: amount * price,
     counterparty: to,
     hash,
     at: Date.now(),
-    status: 'pending'
+    status: 'pending',
+    kind: 'transfer'
   }
   store.addTransfer(record)
+  void watchReceipt(store, settings, chain.id, hash, record.id, tx)
 
-  // The external path has no ethers response to await, so watch the chain.
-  if (isExternal(wallet.kind)) {
-    void waitForReceipt(store, chain.id, hash, record.id)
-  }
+  const feeResult = fee ? await sendFee(store, settings, sender, wallet, token, fee, price) : null
+  return { hash, explorerUrl: `${chain.explorer}/tx/${hash}`, chainId: chain.id, submittedAt: record.at, fee: feeResult }
+}
 
-  return {
-    recordId: record.id,
-    hash,
-    explorerUrl: `${chain.explorer}/tx/${hash}`,
-    chainId: chain.id,
-    submittedAt: record.at
+/**
+ * The fee goes after the transfer, as its own transaction, so it is only
+ * ever asked for once the user's transfer is on its way, and the wallet
+ * shows it to them for what it is.
+ */
+async function sendFee(
+  store: Store,
+  settings: Settings,
+  sender: Sender,
+  wallet: Wallet,
+  token: TokenDef,
+  fee: FeePlan,
+  price: number
+): Promise<SendResult['fee']> {
+  const chain = getChain(token.chainId)
+  const tx = buildTransaction(wallet, token, fee.recipient, fee.units)
+  try {
+    const hash = await sender.sendTransaction(wallet.connectionId!, chain.id, tx)
+    const amount = Number(formatUnits(fee.units, token.decimals))
+    const record: TransferRecord = {
+      id: randomUUID(),
+      direction: 'out',
+      walletId: wallet.id,
+      chainId: chain.id,
+      symbol: token.symbol,
+      amount,
+      value: amount * price,
+      counterparty: fee.recipient,
+      hash,
+      at: Date.now(),
+      status: 'pending',
+      kind: 'fee'
+    }
+    store.addTransfer(record)
+    void watchReceipt(store, settings, chain.id, hash, record.id, tx)
+    return { status: 'sent', hash, explorerUrl: `${chain.explorer}/tx/${hash}` }
+  } catch (error) {
+    const err = error as Error & { code?: string | number }
+    const declined = err.code === 4001 || /reject|denied|cancell?ed|declined/i.test(err.message)
+    return { status: declined ? 'declined' : 'failed', message: declined ? 'The fee was declined.' : err.message }
   }
 }
 
-/** Poll for a receipt on a hash somebody else's wallet broadcast. */
-async function waitForReceipt(store: Store, chainId: number, hash: string, recordId: string): Promise<void> {
+/**
+ * Compare what the chain recorded with what the wallet was asked to send.
+ * Wallets legitimately change gas and nonce, never the sender, recipient,
+ * amount or calldata. A difference means the wallet, or something posing as
+ * it, sent something else, and the user should hear about it.
+ */
+export function describeMismatch(
+  asked: { from: string; to: string; value?: string; data?: string },
+  onChain: { from: string; to: string | null; value: bigint; data: string }
+): string | null {
+  const same = (a?: string | null, b?: string | null): boolean => (a ?? '').toLowerCase() === (b ?? '').toLowerCase()
+  if (!same(asked.from, onChain.from)) return 'It was sent from a different address than the one you chose.'
+  if (!same(asked.to, onChain.to)) return 'It went to a different address than the one you entered.'
+  if (BigInt(asked.value ?? '0x0') !== onChain.value) return 'It moved a different amount than you entered.'
+  const askedData = asked.data && asked.data !== '0x' ? asked.data : '0x'
+  const chainData = onChain.data && onChain.data !== '0x' ? onChain.data : '0x'
+  if (!same(askedData, chainData)) return 'Its contents differ from the transfer you approved here.'
+  return null
+}
+
+/**
+ * Poll for a receipt. Hand-rolled rather than ethers' waitForTransaction so
+ * the timer never keeps the process alive on its own.
+ */
+async function pollReceipt(
+  provider: ReturnType<typeof providerFor>,
+  hash: string,
+  timeoutMs: number
+): Promise<{ status: number | null } | null> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const receipt = await provider.getTransactionReceipt(hash).catch(() => null)
+    if (receipt) return receipt
+    await new Promise<void>((resolve) => setTimeout(resolve, 8_000).unref?.())
+  }
+  return null
+}
+
+/** Follow a hash the wallet broadcast until it lands, and check it is what was asked for. */
+async function watchReceipt(
+  store: Store,
+  settings: Settings,
+  chainId: number,
+  hash: string,
+  recordId: string,
+  asked: { from: string; to: string; value?: string; data?: string }
+): Promise<void> {
   try {
-    const provider = providerFor(chainId, store.settings)
-    const receipt = await provider.waitForTransaction(hash, 1, 10 * 60_000)
-    store.updateTransfer(recordId, { status: receipt?.status === 1 ? 'confirmed' : 'failed' })
+    const provider = providerFor(chainId, settings)
+    const receipt = await pollReceipt(provider, hash, 15 * 60_000)
+    if (!store.isOpen) return
+    let warning: string | null = null
+    const sent = await provider.getTransaction(hash).catch(() => null)
+    if (sent) warning = describeMismatch(asked, { from: sent.from, to: sent.to, value: sent.value, data: sent.data })
+    store.updateTransfer(recordId, { status: receipt?.status === 1 ? 'confirmed' : 'failed', warning })
   } catch {
-    // Leave it pending rather than claiming a failure we cannot prove.
+    // Unknown is not failed. Leave it pending rather than guess.
   }
 }

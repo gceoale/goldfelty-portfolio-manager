@@ -1,18 +1,25 @@
-import { app, BrowserWindow, Menu, nativeTheme, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, powerMonitor, session, shell } from 'electron'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Store } from './store.ts'
 import { Vault } from './vault.ts'
-import { registerIpc, startAutoLock, type Runtime } from './ipc.ts'
+import { Prefs } from './prefs.ts'
+import { registerIpc, startAutoLock, lockApp, type Runtime } from './ipc.ts'
 import { registerDeepLinks, onDeepLink } from './deepLinks.ts'
-import { WalletConnectService } from './walletconnect.ts'
-import { ExtensionBridge } from './extensionBridge.ts'
+import { ConnectionManager } from './connections/index.ts'
 import { disposeProviders } from './rpc.ts'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !app.isPackaged
+const devServer = isDev ? process.env.ELECTRON_RENDERER_URL : undefined
 
-// One vault, one process. A second instance would race on the state file.
+// Every renderer sandboxed, whatever a window's own options say. Skipped only
+// when Chromium's own sandbox is switched off on the command line (CI and
+// containers running as root), which would otherwise stop child processes
+// starting at all; each window still sets sandbox: true regardless.
+if (!app.commandLine.hasSwitch('no-sandbox')) app.enableSandbox()
+
+// One store, one process. A second instance would race on the encrypted file.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
   process.exit(0)
@@ -21,92 +28,113 @@ if (!app.requestSingleInstanceLock()) {
 app.setName('Goldfelty Portfolio Manager')
 registerDeepLinks()
 
-let runtime: Runtime
+const rendererFile = join(__dirname, '../renderer/index.html')
+const rendererUrl = devServer ?? pathToFileURL(rendererFile).href
+
+let runtime: Runtime | undefined
 let autoLockTimer: NodeJS.Timeout | undefined
 let mainWindow: BrowserWindow | null = null
 
+function isAppUrl(url: string): boolean {
+  return url.startsWith(rendererUrl)
+}
+
+/** Open a link in the user's browser, if it is an https page. */
+function openOutside(url: string): void {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) void shell.openExternal(parsed.toString())
+  } catch {
+    // not a URL; ignore
+  }
+}
+
+/**
+ * Applies to every web contents the app ever creates, not just the main
+ * window: no new windows, no navigation away, no webviews, no redirects.
+ */
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    openOutside(url)
+    return { action: 'deny' }
+  })
+  contents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return
+    event.preventDefault()
+    openOutside(url)
+  })
+  contents.on('will-redirect', (event, url) => {
+    if (!isAppUrl(url)) event.preventDefault()
+  })
+  contents.on('will-attach-webview', (event) => event.preventDefault())
+})
+
 function createWindow(): BrowserWindow {
+  const isMac = process.platform === 'darwin'
   const window = new BrowserWindow({
-    width: 1280,
-    height: 840,
-    minWidth: 1000,
-    minHeight: 680,
+    width: 1240,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
     show: false,
-    backgroundColor: '#0c0d11',
-    title: 'Goldfelty Portfolio Manager',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 18, y: 20 },
-    autoHideMenuBar: process.platform !== 'darwin',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#ffffff',
+    title: 'Goldfelty',
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    trafficLightPosition: { x: 16, y: 16 },
+    autoHideMenuBar: !isMac,
     icon: process.platform === 'linux' ? join(__dirname, '../../resources/icon.png') : undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInWorker: false,
       webviewTag: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      navigateOnDragDrop: false,
       spellcheck: false,
-      devTools: isDev
+      devTools: isDev,
+      safeDialogs: true
     }
   })
 
   window.once('ready-to-show', () => window.show())
-
-  // Nothing in this app should ever open a second window or navigate away; a
-  // wallet that can be steered to an attacker's page is a wallet that leaks.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) void shell.openExternal(url)
-    return { action: 'deny' }
-  })
-  window.webContents.on('will-navigate', (event, url) => {
-    const allowed = isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL ?? '\u0000')
-    if (!allowed) {
-      event.preventDefault()
-      if (url.startsWith('https://')) void shell.openExternal(url)
-    }
-  })
-  window.webContents.on('will-attach-webview', (event) => event.preventDefault())
-
-  if (isDev && process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-
+  if (devServer) void window.loadURL(devServer)
+  else void window.loadFile(rendererFile)
   return window
 }
 
-function applyContentSecurityPolicy(): void {
-  const directives = [
-    "default-src 'self'",
-    // Vite injects styles at runtime; scripts stay locked to the bundle.
-    "style-src 'self' 'unsafe-inline'",
-    `script-src 'self'${isDev ? " 'unsafe-inline' 'unsafe-eval'" : ''}`,
-    "img-src 'self' data:",
-    "font-src 'self' data:",
-    // The renderer never talks to the network itself — all RPC and price
-    // traffic goes through the main process.
-    `connect-src 'self'${isDev ? ' ws: http://localhost:*' : ''}`,
-    "object-src 'none'",
-    "frame-src 'none'",
-    "base-uri 'none'",
-    "form-action 'none'"
-  ]
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [directives.join('; ')]
-      }
-    })
+function lockSession(): void {
+  const ses = session.defaultSession
+
+  // The renderer never needs the network: prices, balances and wallets all
+  // go through the main process. Any request it makes elsewhere is refused,
+  // which backs up the page's own CSP.
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    const url = details.url
+    const allowed =
+      url.startsWith('file:') ||
+      url.startsWith('devtools:') ||
+      url.startsWith('data:') ||
+      (devServer !== undefined && (url.startsWith(devServer) || url.startsWith(devServer.replace(/^http/, 'ws'))))
+    callback({ cancel: !allowed })
   })
 
-  // Deny every powerful web permission outright; the app needs none of them.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
-  session.defaultSession.setPermissionCheckHandler(() => false)
+  // No camera, microphone, notifications, clipboard reads, HID, serial...
+  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  ses.setPermissionCheckHandler(() => false)
+  ses.setDevicePermissionHandler(() => false)
+  ses.on('will-download', (event) => event.preventDefault())
 }
 
 function buildMenu(): void {
   const isMac = process.platform === 'darwin'
+  const lockItem: Electron.MenuItemConstructorOptions = {
+    label: 'Lock Goldfelty',
+    accelerator: 'CmdOrCtrl+L',
+    click: () => runtime && lockApp(runtime)
+  }
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
       ? ([
@@ -115,14 +143,7 @@ function buildMenu(): void {
             submenu: [
               { role: 'about' },
               { type: 'separator' },
-              {
-                label: 'Lock Vault',
-                accelerator: 'CmdOrCtrl+L',
-                click: () => {
-                  runtime.vault.lock()
-                  mainWindow?.webContents.send('app:locked')
-                }
-              },
+              lockItem,
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -135,53 +156,26 @@ function buildMenu(): void {
           }
         ] as Electron.MenuItemConstructorOptions[])
       : []),
-    {
-      label: 'File',
-      submenu: [
-        {
-          label: 'Lock Vault',
-          accelerator: 'CmdOrCtrl+L',
-          click: () => {
-            runtime.vault.lock()
-            mainWindow?.webContents.send('app:locked')
-          }
-        },
-        { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' }
-      ]
-    },
+    { label: 'File', submenu: [...(isMac ? [] : [lockItem, { type: 'separator' } as const]), isMac ? { role: 'close' } : { role: 'quit' }] },
     {
       label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' }
-      ]
+      submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }]
     },
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
-        ...(isDev ? ([{ role: 'toggleDevTools' }] as Electron.MenuItemConstructorOptions[]) : [])
+        ...(isDev ? ([{ type: 'separator' }, { role: 'reload' }, { role: 'toggleDevTools' }] as Electron.MenuItemConstructorOptions[]) : [])
       ]
     },
+    { role: 'windowMenu' },
     {
       role: 'help',
-      submenu: [
-        {
-          label: 'Goldfelty Support',
-          click: () => void shell.openExternal('https://goldfelty.com/support')
-        }
-      ]
+      submenu: [{ label: 'goldfelty.com', click: () => openOutside('https://goldfelty.com') }]
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
@@ -189,69 +183,75 @@ function buildMenu(): void {
 
 void app.whenReady().then(() => {
   const dataDir = app.getPath('userData')
+  const prefs = new Prefs(dataDir)
   const store = new Store(dataDir)
   const vault = new Vault(dataDir)
-
-  const walletConnect = new WalletConnectService(dataDir)
-  walletConnect.setProjectId(store.settings.walletConnectProjectId)
-  const bridge = new ExtensionBridge()
+  const connections = new ConnectionManager(dataDir, (url) => shell.openExternal(url))
 
   runtime = {
     store,
     vault,
+    prefs,
+    connections,
+    window: () => mainWindow,
+    rendererUrl,
     lastBalances: [],
-    lastPortfolioAt: 0,
-    lastActivity: Date.now(),
-    onboardingTicket: null,
-    backupConfirmed: store.account?.backedUp ?? false,
-    walletConnect,
-    bridge
+    lastActivity: Date.now()
   }
+  const rt = runtime
 
-  // A wallet app dropping its session must be visible immediately, not at the
-  // next refresh — the user needs to know they can no longer sign.
-  const announce = (): void => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.send('connections:changed')
-  }
-  walletConnect.onConnectionsChanged(announce)
-  bridge.onConnectionsChanged(announce)
+  // A wallet appearing or dropping must show at once: the user needs to know
+  // whether they can still send.
+  connections.onChange(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('connections:changed')
+  })
 
-  nativeTheme.themeSource = store.settings.theme
-  applyContentSecurityPolicy()
-  registerIpc(runtime)
+  nativeTheme.themeSource = prefs.theme
+  lockSession()
+  registerIpc(rt)
   buildMenu()
-  autoLockTimer = startAutoLock(runtime)
+  autoLockTimer = startAutoLock(rt)
+
+  // Walking away from the computer locks Goldfelty too.
+  powerMonitor.on('lock-screen', () => lockApp(rt))
+  powerMonitor.on('suspend', () => lockApp(rt))
 
   mainWindow = createWindow()
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 
-  // A pairing URI handed to us by a wallet or a web page.
-  onDeepLink((link) => {
+  onDeepLink(() => {
     if (!mainWindow) return
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.focus()
-    mainWindow.webContents.send('app:deepLink', link)
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      mainWindow = createWindow()
+      mainWindow.on('closed', () => {
+        mainWindow = null
+      })
+    }
   })
 })
 
 app.on('window-all-closed', () => {
+  // With no window there is nothing to approve sends in; lock regardless.
+  if (runtime) lockApp(runtime)
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
-  // Lock on the way out so the seed never survives in a crash dump.
-  runtime?.vault.lock()
-  runtime?.store.flush()
   if (autoLockTimer) clearInterval(autoLockTimer)
-  // The bridge holds a listening socket; leaving it bound would keep the
-  // process alive and keep a signing endpoint open after the window is gone.
-  void runtime?.bridge.stop()
+  if (runtime) {
+    lockApp(runtime)
+    // The bridge holds a listening socket; it must not outlive the app.
+    void runtime.connections.shutdown()
+  }
   disposeProviders()
 })
 
-// A renderer crash must not leave an unlocked vault behind.
-app.on('render-process-gone', () => runtime?.vault.lock())
-app.on('child-process-gone', () => runtime?.vault.lock())
+// A crashed renderer must not leave Goldfelty unlocked behind it.
+app.on('render-process-gone', () => runtime && lockApp(runtime))

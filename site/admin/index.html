@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.goldfelty.com https://api.github.com; base-uri 'none'; form-action 'none'" />
+<title>Owner dashboard · Goldfelty</title>
+<link rel="icon" href="/icon.png" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><span class="mark">G</span> Goldfelty</a>
+    <nav><span class="muted">Owner dashboard</span></nav>
+  </header>
+
+  <h1>Users</h1>
+  <p class="muted" id="intro">
+    Paste your admin token (the GOLDFELTY_ADMIN_TOKEN secret). It stays in this tab only and is sent to
+    api.goldfelty.com and nowhere else.
+  </p>
+  <form class="signin" id="signin">
+    <input id="token" type="password" autocomplete="off" placeholder="Admin token" aria-label="Admin token" />
+    <button class="btn" type="submit">Show</button>
+    <button class="btn plain" type="button" id="forget">Forget token</button>
+  </form>
+  <p class="muted" id="status"></p>
+
+  <div class="stats" id="stats" hidden>
+    <div class="stat"><div class="label">Accounts</div><div class="value" id="users">–</div></div>
+    <div class="stat"><div class="label">New in the last 7 days</div><div class="value" id="week">–</div></div>
+    <div class="stat"><div class="label">Sharing their total</div><div class="value" id="sharing">–</div></div>
+    <div class="stat"><div class="label">App downloads (all releases)</div><div class="value" id="downloads">–</div></div>
+  </div>
+
+  <section id="totals-section" hidden>
+    <h2>Value registered with the app</h2>
+    <p class="muted">From users who turned on sharing only. Totals are per currency, as each user’s app reports in its own.</p>
+    <div class="scroll"><table id="totals"><thead><tr><th>Currency</th><th class="num">Users</th><th class="num">Total</th><th class="num">Average</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="people-section" hidden>
+    <h2>Accounts</h2>
+    <p class="muted">Largest shared totals first, then everyone else by sign-up date. Up to 500.</p>
+    <div class="scroll"><table id="people"><thead><tr><th>Username</th><th>Email</th><th>Joined</th><th class="num">Wallets</th><th class="num">Portfolio</th><th>Reported</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <footer><span>Not linked from anywhere. Only someone with the admin token sees anything here.</span></footer>
+</div>
+<script src="/admin/admin.js"></script>
+</body>
+</html>
