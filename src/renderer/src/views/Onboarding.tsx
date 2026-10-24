@@ -1,544 +1,282 @@
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
-import type { RecoveryMaterial } from '@shared/types.js'
-import { Banner, Button, CopyButton, Field, PasswordInput } from '../components/ui.js'
-import {
-  IconAlert,
-  IconCheck,
-  IconDownload,
-  IconEye,
-  IconLock,
-  IconShield,
-  IconWallet
-} from '../components/Icons.js'
-import { useApp } from '../state/app.js'
+import { useEffect, useState, type JSX } from 'react'
+import type { AccountApiStatus } from '@shared/types.ts'
+import { useApp } from '../state/app.tsx'
+import { ConnectSheet } from '../components/ConnectSheet.tsx'
+import { Button, Field, Notice, TextInput, WalletGlyph } from '../components/ui.tsx'
+import { shortAddress } from '../lib/format.ts'
 
-type Step = 'welcome' | 'password' | 'account' | 'recovery' | 'confirm' | 'username' | 'wallets' | 'done'
+const api = window.goldfelty
+const TERMS_URL = 'https://goldfelty.com/terms/'
 
-const ORDER: Step[] = ['welcome', 'password', 'account', 'recovery', 'confirm', 'username', 'wallets', 'done']
-
-const BACKUP_CHECKS = [
-  'I wrote the 24 words down and stored them somewhere only I can reach.',
-  'Nobody can recover the phrase, the password or the funds for me.',
-  'Anyone who sees the phrase can take everything it controls.',
-  'It is not in a screenshot, a photo or a synced note.'
+type Step = 'welcome' | 'password' | 'connect' | 'account'
+const STEPS: Array<{ id: Step; label: string }> = [
+  { id: 'welcome', label: 'Welcome' },
+  { id: 'password', label: 'Password' },
+  { id: 'connect', label: 'Wallets' },
+  { id: 'account', label: 'Account' }
 ]
 
+/**
+ * First run, laid out like a setup assistant: a step list on the left, one
+ * question at a time on the right. If setup was interrupted after the
+ * password, it picks up at the wallet step.
+ */
 export function Onboarding(): JSX.Element {
-  const { notify, refreshStatus, refreshWallets, run } = useApp()
-  const [step, setStep] = useState<Step>('welcome')
+  const { status, refreshStatus } = useApp()
+  const resumed = !!status?.initialized && !status.locked
+  const [step, setStep] = useState<Step>(resumed ? 'connect' : 'welcome')
+
+  const finish = async (): Promise<void> => {
+    await api.setup.finish()
+    await refreshStatus()
+  }
+
+  return (
+    <div className="setup">
+      <div className="setup-drag" />
+      <aside className="setup-steps">
+        <div className="setup-brand">
+          <span className="brand-mark">G</span> Goldfelty
+        </div>
+        <ol>
+          {STEPS.map((s, i) => {
+            const at = STEPS.findIndex((x) => x.id === step)
+            return (
+              <li key={s.id} className={i === at ? 'current' : i < at ? 'done' : ''}>
+                {s.label}
+              </li>
+            )
+          })}
+        </ol>
+      </aside>
+      <main className="setup-main">
+        {step === 'welcome' ? <Welcome onNext={() => setStep('password')} /> : null}
+        {step === 'password' ? <Password onNext={() => setStep('connect')} /> : null}
+        {step === 'connect' ? <ConnectStep onNext={() => setStep('account')} /> : null}
+        {step === 'account' ? <AccountStep onDone={() => void finish()} /> : null}
+      </main>
+    </div>
+  )
+}
+
+function Welcome({ onNext }: { onNext: () => void }): JSX.Element {
+  const [agreed, setAgreed] = useState(false)
+  return (
+    <section className="setup-panel">
+      <h1>Welcome to Goldfelty</h1>
+      <p>One view of the crypto wallets you already use: what you hold across all of them, what it’s worth, and a single place to send and receive.</p>
+      <ul className="plain-list">
+        <li>Goldfelty doesn’t create wallets or hold keys. You connect MetaMask, Rabby, Phantom, Frame, a phone wallet and 30 others.</li>
+        <li>Every transfer is approved in your own wallet.</li>
+        <li>What Goldfelty knows about your wallets stays on this computer, encrypted with a password you choose next.</li>
+      </ul>
+      <label className="check">
+        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+        <span>
+          I agree to the{' '}
+          <button type="button" className="link" onClick={() => void api.app.openExternal(TERMS_URL)}>
+            Terms of Service
+          </button>
+          , including the fee on tokens sent through Goldfelty, which the owner of goldfelty.com can set between 0% and 10%.
+        </span>
+      </label>
+      <div className="setup-actions">
+        <Button variant="primary" disabled={!agreed} onClick={onNext}>
+          Continue
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function Password({ onNext }: { onNext: () => void }): JSX.Element {
+  const { refreshStatus } = useApp()
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [strength, setStrength] = useState<{ score: number; label: string; problems: string[] } | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [strength, setStrength] = useState<{ score: number; label: string; problems: string[] } | null>(null)
-
-  const [email, setEmail] = useState('')
-  const [emailError, setEmailError] = useState<string | null>(null)
-
-  const [ticket, setTicket] = useState<string | null>(null)
-  const [recovery, setRecovery] = useState<RecoveryMaterial | null>(null)
-  const [revealed, setRevealed] = useState(false)
-  const [checks, setChecks] = useState<boolean[]>(BACKUP_CHECKS.map(() => false))
-
-  const [username, setUsername] = useState('')
-  const [usernameState, setUsernameState] = useState<{ checking: boolean; ok: boolean | null; reason?: string; offline?: boolean }>({
-    checking: false,
-    ok: null
-  })
-
-  const [walletCount, setWalletCount] = useState(5)
-
-  const index = ORDER.indexOf(step)
-
-  // ---- password ----------------------------------------------------------
   useEffect(() => {
-    if (!password) {
-      setStrength(null)
-      return
-    }
-    let cancelled = false
-    void window.goldfelty.onboarding.scorePassword(password).then((result) => {
-      if (!cancelled && result.ok) setStrength(result.data)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [password])
+    if (!pw) return setStrength(null)
+    void api.setup.scorePassword(pw).then((r) => r.ok && setStrength(r.data))
+  }, [pw])
 
-  const passwordsMatch = password.length > 0 && password === confirmPassword
-  const passwordReady = (strength?.score ?? 0) >= 2 && passwordsMatch
-
-  const createVault = useCallback(async () => {
+  const ok = (strength?.score ?? 0) >= 2 && pw === pw2
+  const create = async (): Promise<void> => {
     setBusy(true)
-    const result = await run(window.goldfelty.onboarding.createVault(password), 'Could not create your vault')
+    setError(null)
+    const r = await api.setup.create(pw)
     setBusy(false)
-    if (!result) return
-    setTicket(result.ticket)
-    setRecovery(result.recovery)
-    // The password has done its job; drop it from renderer memory.
-    setPassword('')
-    setConfirmPassword('')
-    setStep('account')
-  }, [password, run])
+    if (!r.ok) return setError(r.error)
+    setPw('')
+    setPw2('')
+    await refreshStatus()
+    onNext()
+  }
 
-  // ---- username ----------------------------------------------------------
+  return (
+    <form
+      className="setup-panel"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (ok) void create()
+      }}
+    >
+      <h1>Choose a password</h1>
+      <p>It unlocks Goldfelty on this computer and encrypts what it stores. There’s no way to recover it, but forgetting it never costs you funds: your wallets hold those, and you can set Goldfelty up again.</p>
+      <Field label="Password" htmlFor="pw" hint={strength ? `${strength.label}${strength.problems[0] ? `. ${strength.problems[0]}` : ''}` : 'At least 10 characters.'}>
+        <TextInput id="pw" type="password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} />
+        {strength ? (
+          <div className="meter" aria-hidden="true">
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className={i < strength.score ? `on s${strength.score}` : ''} />
+            ))}
+          </div>
+        ) : null}
+      </Field>
+      <Field label="Again" htmlFor="pw2" error={pw2 && pw !== pw2 ? 'The passwords don’t match.' : null}>
+        <TextInput id="pw2" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+      </Field>
+      {error ? <Notice tone="bad">{error}</Notice> : null}
+      <div className="setup-actions">
+        <Button type="submit" variant="primary" disabled={!ok} busy={busy}>
+          {busy ? 'Setting up…' : 'Continue'}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function ConnectStep({ onNext }: { onNext: () => void }): JSX.Element {
+  const { wallets, connectOpen, openConnect, refreshData } = useApp()
   useEffect(() => {
-    if (username.trim().length < 3) {
-      setUsernameState({ checking: false, ok: null })
-      return
-    }
-    setUsernameState({ checking: true, ok: null })
+    void refreshData()
+  }, [refreshData])
+  const connected = wallets.filter((w) => w.kind !== 'readonly')
+  return (
+    <section className="setup-panel">
+      <h1>Connect your wallets</h1>
+      <p>Pick the wallets you use. Each one asks you to approve the connection, and Goldfelty adds every account it shares.</p>
+      {connected.length ? (
+        <ul className="setup-wallets">
+          {connected.map((w) => (
+            <li key={w.id}>
+              <WalletGlyph name={w.providerName ?? w.label} color={w.color} size={20} />
+              <span>{w.label}</span>
+              <span className="muted mono small">{shortAddress(w.address)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="setup-actions">
+        <Button onClick={() => openConnect(true)}>{connected.length ? 'Connect another…' : 'Connect a wallet…'}</Button>
+        <span className="spacer" />
+        <Button variant={connected.length ? 'primary' : 'plain'} onClick={onNext}>
+          {connected.length ? 'Continue' : 'Skip for now'}
+        </Button>
+      </div>
+      {connectOpen ? <ConnectSheet onDone={() => void refreshData()} /> : null}
+    </section>
+  )
+}
+
+function AccountStep({ onDone }: { onDone: () => void }): JSX.Element {
+  const { wallets, notify, updateSettings } = useApp()
+  const [share, setShare] = useState(false)
+  const signers = wallets.filter((w) => w.kind !== 'readonly' && w.connectionId)
+  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
+  const [signer, setSigner] = useState(signers[0]?.id ?? '')
+  const [problems, setProblems] = useState<{ username: string | null; email: string | null }>({ username: null, email: null })
+  const [availability, setAvailability] = useState<string | null>(null)
+  const [apiStatus, setApiStatus] = useState<AccountApiStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void api.account.apiStatus().then((r) => r.ok && setApiStatus(r.data))
+  }, [])
+
+  useEffect(() => {
+    setAvailability(null)
+    if (!username) return
     const timer = setTimeout(() => {
-      void window.goldfelty.onboarding.checkUsername(username).then((result) => {
-        if (!result.ok) {
-          setUsernameState({ checking: false, ok: false, reason: result.error })
-          return
-        }
-        setUsernameState({
-          checking: false,
-          ok: result.data.available,
-          reason: result.data.reason,
-          offline: result.data.offline
-        })
+      void api.account.checkUsername(username).then((r) => {
+        if (!r.ok) return
+        setAvailability(r.data.offline ? null : r.data.available ? 'Available' : (r.data.reason ?? 'Taken'))
       })
-    }, 420)
+    }, 400)
     return () => clearTimeout(timer)
   }, [username])
 
-  const register = useCallback(async () => {
+  const submit = async (): Promise<void> => {
+    const v = await api.account.validate(username, email)
+    if (v.ok && (v.data.username || v.data.email)) return setProblems(v.data)
+    setProblems({ username: null, email: null })
     setBusy(true)
-    const result = await run(window.goldfelty.onboarding.register(username, email), 'Could not create your account')
+    setError(null)
+    const r = await api.account.register({ username, email, walletId: signers.length && apiStatus?.reachable ? signer : null })
     setBusy(false)
-    if (!result) return
-    if (!result.linked) {
-      notify({ tone: 'info', title: 'Account created offline', text: result.message })
-    } else {
-      notify({ tone: 'success', title: `Welcome, ${result.account.username}` })
-    }
-    setStep('wallets')
-  }, [username, email, run, notify])
+    if (!r.ok) return setError(r.error)
+    if (share) await updateSettings({ shareTotals: true })
+    notify({ tone: r.data.linked ? 'good' : 'info', title: r.data.linked ? 'Account created on goldfelty.com' : 'Account saved on this computer', body: r.data.message })
+    onDone()
+  }
 
-  const finish = useCallback(async () => {
-    setBusy(true)
-    const created = await run(window.goldfelty.onboarding.finish(walletCount), 'Could not connect your wallets')
-    setBusy(false)
-    if (!created) return
-    setRecovery(null)
-    setTicket(null)
-    await refreshWallets()
-    await refreshStatus()
-  }, [walletCount, run, refreshWallets, refreshStatus])
-
-  const seedWords = useMemo(() => recovery?.mnemonic.split(' ') ?? [], [recovery])
-
+  const signerName = signers.find((w) => w.id === signer)?.providerName ?? 'your wallet'
   return (
-    <div className="gate">
-      <div className="gate__inner">
-        <div className="gate__brand">
-          <span className="sidebar__mark gate__brand-mark">G</span>
-          <div>
-            <div className="sidebar__name" style={{ fontSize: 15 }}>
-              Goldfelty
-            </div>
-            <div className="sidebar__sub">Portfolio Manager</div>
-          </div>
-        </div>
-
-        {step !== 'welcome' && (
-          <div className="progress" aria-label={`Step ${index} of ${ORDER.length - 2}`}>
-            {ORDER.slice(1, -1).map((s, i) => (
-              <span
-                key={s}
-                className={`progress__tick ${i < index - 1 ? 'progress__tick--done' : i === index - 1 ? 'progress__tick--current' : ''}`}
-              />
+    <form
+      className="setup-panel"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <h1>Your goldfelty.com account</h1>
+      <p>Reserves your username on goldfelty.com. It’s optional, and it never holds funds or keys.</p>
+      <Field label="Username" htmlFor="username" error={problems.username} hint={availability ?? 'Lowercase letters, numbers, - and _.'}>
+        <TextInput id="username" value={username} maxLength={24} onChange={(e) => setUsername(e.target.value.toLowerCase())} />
+      </Field>
+      <Field label="Email" htmlFor="email" error={problems.email}>
+        <TextInput id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      {apiStatus?.reachable && signers.length ? (
+        <Field label="Prove it’s you" hint={`${signerName} will ask you to sign a short message. Signing costs nothing and moves no funds.`}>
+          <select className="input" value={signer} onChange={(e) => setSigner(e.target.value)} aria-label="Sign with">
+            {signers.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.label} ({shortAddress(w.address)})
+              </option>
             ))}
-          </div>
-        )}
-
-        {step === 'welcome' && (
-          <>
-            <div>
-              <h1 className="gate__title">Every wallet, one place.</h1>
-              <p className="gate__lede" style={{ marginTop: 10 }}>
-                Bring the wallets you already use into one place, or make new ones. Two minutes to set up.
-              </p>
-            </div>
-            <Banner tone="warning" title="Read this before you put real money here">
-              No third-party audit yet. Use an amount you would not mind losing.
-            </Banner>
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {[
-                { icon: <IconLock size={16} />, title: 'Your password stays here', body: 'It encrypts the vault on this machine. No server has a copy.' },
-                { icon: <IconShield size={16} />, title: 'One phrase restores everything', body: 'Wallets made here come from a single phrase you write down in a moment.' },
-                { icon: <IconWallet size={16} />, title: 'Or bring your own', body: 'Connect MetaMask, Rainbow or anything else you already use.' }
-              ].map((item) => (
-                <div key={item.title} style={{ display: 'flex', gap: 12 }}>
-                  <span style={{ color: 'var(--accent)', marginTop: 2 }}>{item.icon}</span>
-                  <div>
-                    <div style={{ fontSize: 13.5, fontWeight: 570 }}>{item.title}</div>
-                    <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-                      {item.body}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Button variant="primary" size="lg" block onClick={() => setStep('password')}>
-              Get started
-            </Button>
-          </>
-        )}
-
-        {step === 'password' && (
-          <>
-            <div>
-              <h1 className="gate__title">Choose a password</h1>
-              <p className="gate__lede" style={{ marginTop: 8 }}>
-                Unlocks the app and encrypts what it stores. Nobody can reset it.
-              </p>
-            </div>
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <Field label="Password" id="pw">
-                <PasswordInput id="pw" value={password} onChange={setPassword} autoFocus placeholder="At least 10 characters" />
-                {password && strength && (
-                  <>
-                    <div className="strength">
-                      {[0, 1, 2, 3].map((i) => (
-                        <span key={i} className={`strength__bar ${i < strength.score ? `strength__bar--${strength.score}` : ''}`} />
-                      ))}
-                    </div>
-                    <span className="field__hint">
-                      {strength.label}
-                      {strength.problems[0] ? ` — ${strength.problems[0]}` : ''}
-                    </span>
-                  </>
-                )}
-              </Field>
-              <Field
-                label="Confirm password"
-                id="pw2"
-                error={confirmPassword && !passwordsMatch ? 'The two passwords do not match.' : null}
-              >
-                <PasswordInput
-                  id="pw2"
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                  placeholder="Type it again"
-                  onEnter={() => passwordReady && void createVault()}
-                />
-              </Field>
-            </div>
-            <div style={{ display: 'flex', gap: 9 }}>
-              <Button onClick={() => setStep('welcome')}>Back</Button>
-              <Button variant="primary" block busy={busy} disabled={!passwordReady} onClick={() => void createVault()}>
-                Continue
-              </Button>
-            </div>
-          </>
-        )}
-
-        {step === 'account' && (
-          <>
-            <div>
-              <h1 className="gate__title">Create your goldfelty.com account</h1>
-              <p className="gate__lede" style={{ marginTop: 8 }}>
-                For release notes and support. Your password and phrase are never sent; the account is proved by signature.
-              </p>
-            </div>
-            <div className="card">
-              <Field label="Email address" id="email" error={emailError}>
-                <input
-                  id="email"
-                  className="input"
-                  type="email"
-                  value={email}
-                  autoFocus
-                  spellCheck={false}
-                  placeholder="you@example.com"
-                  onChange={(e) => {
-                    setEmail(e.target.value)
-                    setEmailError(null)
-                  }}
-                />
-              </Field>
-            </div>
-            <Button
-              variant="primary"
-              size="lg"
-              block
-              onClick={() => {
-                void window.goldfelty.onboarding.validateIdentity('placeholder', email).then((result) => {
-                  if (result.ok && result.data.email) {
-                    setEmailError(result.data.email)
-                    return
-                  }
-                  setStep('recovery')
-                })
-              }}
-            >
-              Continue
-            </Button>
-          </>
-        )}
-
-        {step === 'recovery' && recovery && (
-          <>
-            <div>
-              <h1 className="gate__title">Write down your recovery phrase</h1>
-              <p className="gate__lede" style={{ marginTop: 8 }}>
-                These 24 words rebuild your wallets on any machine. Shown once, now.
-              </p>
-            </div>
-
-            <Banner tone="danger" title="This screen never comes back">
-              After this the phrase is sealed. There is no way to show it again.
-            </Banner>
-
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div className="seed-grid">
-                <div className={revealed ? '' : 'blurred'} style={{ display: 'contents' }}>
-                  {seedWords.map((word, i) => (
-                    <span key={`${word}-${i}`} className="seed-word">
-                      <span className="seed-word__i">{i + 1}</span>
-                      {word}
-                    </span>
-                  ))}
-                </div>
-                {!revealed && (
-                  <div className="reveal-veil">
-                    <Button variant="primary" icon={<IconEye size={15} />} onClick={() => setRevealed(true)}>
-                      Reveal phrase
-                    </Button>
-                    <span className="muted" style={{ fontSize: 12 }}>
-                      Check nobody is looking.
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <CopyButton
-                  value={recovery.mnemonic}
-                  label="Copy phrase"
-                  clearAfterMs={90_000}
-                  onCopied={() =>
-                    notify({
-                      tone: 'info',
-                      title: 'Phrase copied',
-                      text: 'Clipboard clears in 90 seconds. Paste it somewhere offline.'
-                    })
-                  }
-                />
-                <CopyButton
-                  value={recovery.privateKey}
-                  label="Copy private key"
-                  clearAfterMs={90_000}
-                  onCopied={() =>
-                    notify({ tone: 'info', title: 'Private key copied', text: 'The clipboard clears itself in 90 seconds.' })
-                  }
-                />
-                <Button
-                  icon={<IconDownload size={14} />}
-                  size="sm"
-                  onClick={() => {
-                    const text = [
-                      'GOLDFELTY RECOVERY SHEET',
-                      'Keep this on paper. Anyone holding it controls your funds.',
-                      '',
-                      `Created:         ${new Date().toISOString()}`,
-                      `Derivation path: ${recovery.derivationPath}`,
-                      `Owner address:   ${recovery.ownerAddress}`,
-                      '',
-                      'Recovery phrase (24 words):',
-                      recovery.mnemonic,
-                      '',
-                      'Owner private key:',
-                      recovery.privateKey,
-                      ''
-                    ].join('\n')
-                    const blob = new Blob([text], { type: 'text/plain' })
-                    const url = URL.createObjectURL(blob)
-                    const anchor = document.createElement('a')
-                    anchor.href = url
-                    anchor.download = 'goldfelty-recovery-sheet.txt'
-                    anchor.click()
-                    URL.revokeObjectURL(url)
-                    notify({
-                      tone: 'info',
-                      title: 'Recovery sheet saved',
-                      text: 'Print it, then delete the file.'
-                    })
-                  }}
-                >
-                  Save sheet
-                </Button>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 13 }}>
-                <div className="field__label" style={{ marginBottom: 5 }}>
-                  Owner private key
-                </div>
-                <div className="mono" style={{ wordBreak: 'break-all', color: 'var(--text-secondary)' }}>
-                  <span className={revealed ? '' : 'blurred'}>{recovery.privateKey}</span>
-                </div>
-                <div className="field__hint" style={{ marginTop: 6 }}>
-                  Path {recovery.derivationPath} · owner {recovery.ownerAddress}
-                </div>
-              </div>
-            </div>
-
-            <Button variant="primary" size="lg" block disabled={!revealed} onClick={() => setStep('confirm')}>
-              I have written it down
-            </Button>
-          </>
-        )}
-
-        {step === 'confirm' && (
-          <>
-            <div>
-              <h1 className="gate__title">Confirm your backup</h1>
-              <p className="gate__lede" style={{ marginTop: 8 }}>
-                Tick these only if they are true.
-              </p>
-            </div>
-            <div className="checklist">
-              {BACKUP_CHECKS.map((text, i) => (
-                <button
-                  key={text}
-                  className={`check ${checks[i] ? 'check--on' : ''}`}
-                  onClick={() => setChecks((current) => current.map((value, j) => (i === j ? !value : value)))}
-                >
-                  <span className="check__box">{checks[i] && <IconCheck size={12} />}</span>
-                  <span className="check__text">{text}</span>
-                </button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 9 }}>
-              <Button onClick={() => setStep('recovery')}>Back</Button>
-              <Button
-                variant="primary"
-                block
-                busy={busy}
-                disabled={!checks.every(Boolean)}
-                onClick={() => {
-                  if (!ticket) return
-                  setBusy(true)
-                  void run(window.goldfelty.onboarding.confirmBackup(ticket), 'Could not confirm your backup').then(
-                    (ok) => {
-                      setBusy(false)
-                      if (!ok) return
-                      // Purge the phrase from the renderer the moment it is sealed.
-                      setRecovery(null)
-                      setStep('username')
-                    }
-                  )
-                }}
-              >
-                Seal my vault
-              </Button>
-            </div>
-          </>
-        )}
-
-        {step === 'username' && (
-          <>
-            <div>
-              <h1 className="gate__title">Pick your username</h1>
-              <p className="gate__lede" style={{ marginTop: 8 }}>
-                How you appear on goldfelty.com.
-              </p>
-            </div>
-            <div className="card">
-              <Field
-                label="Username"
-                id="username"
-                error={usernameState.ok === false ? (usernameState.reason ?? 'That username is taken.') : null}
-                hint={
-                  usernameState.checking
-                    ? 'Checking availability…'
-                    : usernameState.ok
-                      ? usernameState.offline
-                        ? 'goldfelty.com is unreachable — the name will be claimed when you next connect.'
-                        : `${username.toLowerCase()} is available.`
-                      : 'Three characters or more.'
-                }
-              >
-                <input
-                  id="username"
-                  className="input"
-                  value={username}
-                  autoFocus
-                  spellCheck={false}
-                  autoComplete="off"
-                  placeholder="satoshi"
-                  onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                />
-              </Field>
-            </div>
-            <Button
-              variant="primary"
-              size="lg"
-              block
-              busy={busy}
-              disabled={usernameState.ok !== true || usernameState.checking}
-              onClick={() => void register()}
-            >
-              Create my account
-            </Button>
-          </>
-        )}
-
-        {step === 'wallets' && (
-          <>
-            <div>
-              <h1 className="gate__title">Connect your first wallets</h1>
-              <p className="gate__lede" style={{ marginTop: 8 }}>
-                Separate accounts, all from the phrase you just wrote down. Add more later in Settings.
-              </p>
-            </div>
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div className="count-grid">
-                {[1, 3, 5, 10, 25, 50].map((count) => (
-                  <button
-                    key={count}
-                    className={`count-option ${walletCount === count ? 'count-option--on' : ''}`}
-                    onClick={() => setWalletCount(count)}
-                  >
-                    <div className="count-option__n">{count}</div>
-                    <div className="count-option__l">{count === 1 ? 'wallet' : 'wallets'}</div>
-                  </button>
-                ))}
-              </div>
-              <Field label="Or choose an exact number" hint="Between 1 and 256.">
-                <input
-                  className="input num"
-                  type="number"
-                  min={1}
-                  max={256}
-                  value={walletCount}
-                  onChange={(e) => setWalletCount(Math.max(1, Math.min(256, Number(e.target.value) || 1)))}
-                />
-              </Field>
-              {walletCount > 50 && (
-                <Banner tone="info">
-                  {walletCount} addresses to scan each refresh. Expect it to take a little longer.
-                </Banner>
-              )}
-            </div>
-            <Button variant="primary" size="lg" block busy={busy} onClick={() => void finish()}>
-              Connect {walletCount} {walletCount === 1 ? 'wallet' : 'wallets'} and open Goldfelty
-            </Button>
-          </>
-        )}
-
-        {step === 'recovery' && !recovery && (
-          <Banner tone="danger" title="Recovery material is no longer available">
-            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              <IconAlert size={14} /> Restart the app to begin setup again.
-            </span>
-          </Banner>
-        )}
+          </select>
+        </Field>
+      ) : (
+        <Notice>
+          {apiStatus === null
+            ? 'Checking goldfelty.com…'
+            : !apiStatus.reachable
+              ? 'goldfelty.com can’t be reached right now, so the account will be saved on this computer. Link it later from Settings.'
+              : 'With no wallet connected, the account is saved on this computer. Link it later from Settings.'}
+        </Notice>
+      )}
+      <label className="check">
+        <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
+        <span>
+          Share my portfolio total with goldfelty.com. Only the total value, its currency and the number of wallets, never addresses or holdings. You
+          can turn this off in Settings, which deletes what was shared.
+        </span>
+      </label>
+      {error ? <Notice tone="bad">{error}</Notice> : null}
+      <div className="setup-actions">
+        <Button variant="plain" onClick={onDone}>
+          Skip
+        </Button>
+        <span className="spacer" />
+        <Button type="submit" variant="primary" busy={busy} disabled={!username || !email || apiStatus === null}>
+          {busy ? `Waiting for ${signerName}…` : 'Create account'}
+        </Button>
       </div>
-    </div>
+    </form>
   )
 }

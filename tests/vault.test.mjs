@@ -1,143 +1,112 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Vault, VaultLockedError, WeakPasswordError, BASE_PATH } from '../src/main/vault.ts'
+import { Vault, VaultLockedError, WeakPasswordError } from '../src/main/vault.ts'
+import { deriveKey, encryptWithKey, newSalt, WrongPasswordError, CorruptVaultError } from '../src/main/crypto.ts'
 
 const PASSWORD = 'Tr0ubad0ur&Bits'
 
-function freshVault() {
-  const dir = mkdtempSync(join(tmpdir(), 'goldfelty-test-'))
-  return { vault: new Vault(dir), dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
+function tempDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'goldfelty-vault-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  return dir
 }
 
-test('creating a vault writes an encrypted file and returns recovery material once', async (t) => {
-  const { vault, dir, cleanup } = freshVault()
-  t.after(cleanup)
+/** A vault file exactly as version 1 wrote it: a seed phrase under the password. */
+async function writeV1Vault(dir, password) {
+  const params = { N: 32768, r: 8, p: 1, keyLength: 32 }
+  const salt = newSalt()
+  const key = await deriveKey(password, salt, params)
+  const blob = encryptWithKey(key, JSON.stringify({ mnemonic: 'test test test test test test test test test test test junk', createdAt: 1 }), {
+    name: 'scrypt',
+    ...params,
+    salt: salt.toString('base64')
+  })
+  writeFileSync(join(dir, 'vault.json'), JSON.stringify(blob))
+}
 
-  const { recovery, ticket } = await vault.create(PASSWORD)
-  assert.equal(recovery.mnemonic.split(' ').length, 24)
-  assert.match(recovery.privateKey, /^0x[0-9a-f]{64}$/)
-  assert.equal(recovery.derivationPath, `${BASE_PATH}/0`)
-  assert.ok(ticket)
-
-  // The seed must not be sitting on disk in the clear.
-  const onDisk = readFileSync(join(dir, 'vault.json'), 'utf8')
-  assert.ok(!onDisk.includes(recovery.mnemonic))
-  assert.ok(!onDisk.includes(recovery.privateKey))
-  assert.ok(onDisk.includes('aes-256-gcm'))
-})
-
-test('refuses a weak password', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
-  await assert.rejects(() => vault.create('password'), WeakPasswordError)
-})
-
-test('the one-time reveal burns after the backup is confirmed', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
-
-  const { recovery, ticket } = await vault.create(PASSWORD)
-  assert.equal(vault.revealOnce(ticket).mnemonic, recovery.mnemonic)
-
-  vault.closeReveal()
-  assert.equal(vault.revealIsOpen, false)
-  assert.throws(() => vault.revealOnce(ticket), /only be shown while setting up/)
-})
-
-test('a forged ticket cannot reveal the seed', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
+test('creates a vault, locks, and unlocks to the same data key', async (t) => {
+  const vault = new Vault(tempDir(t))
   await vault.create(PASSWORD)
-  assert.throws(() => vault.revealOnce('deadbeef'), /only be shown while setting up/)
+  const key = Buffer.from(vault.key())
+  assert.equal(key.length, 32)
+  vault.lock()
+  assert.throws(() => vault.key(), VaultLockedError)
+  const result = await vault.unlock(PASSWORD)
+  assert.equal(result.migratedFromV1, false)
+  assert.ok(vault.key().equals(key))
 })
 
-test('locks, then unlocks with the right password only', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
-
-  const { recovery } = await vault.create(PASSWORD)
+test('locking wipes the key buffer it handed out', async (t) => {
+  const vault = new Vault(tempDir(t))
+  await vault.create(PASSWORD)
+  const handed = vault.key()
   vault.lock()
+  assert.ok(handed.every((b) => b === 0), 'the same buffer is zeroed, not just dropped')
+})
+
+test('refuses a weak password and a wrong one', async (t) => {
+  const vault = new Vault(tempDir(t))
+  await assert.rejects(vault.create('password'), WeakPasswordError)
+  await vault.create(PASSWORD)
+  vault.lock()
+  await assert.rejects(vault.unlock('Wr0ng&Password'), WrongPasswordError)
   assert.equal(vault.isLocked, true)
-  assert.throws(() => vault.deriveOwner(0), VaultLockedError)
-
-  await assert.rejects(() => vault.unlock('not-the-password-1!'), /Incorrect password/)
-  assert.equal(vault.isLocked, true)
-
-  await vault.unlock(PASSWORD)
-  assert.equal(vault.isLocked, false)
-  assert.equal(vault.ownerAddress(0), recovery.ownerAddress)
-})
-
-test('derives a stable, distinct owner key per index', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
-  await vault.create(PASSWORD)
-
-  const addresses = new Set()
-  for (let i = 0; i < 60; i++) addresses.add(vault.ownerAddress(i))
-  assert.equal(addresses.size, 60, '60 wallets must mean 60 distinct owner keys')
-  assert.equal(vault.ownerAddress(17), vault.ownerAddress(17))
-})
-
-test('rejects nonsense derivation indices', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
-  await vault.create(PASSWORD)
-  assert.throws(() => vault.deriveOwner(-1), /Invalid derivation index/)
-  assert.throws(() => vault.deriveOwner(1.5), /Invalid derivation index/)
-})
-
-test('restoring the same phrase rebuilds identical addresses', async (t) => {
-  const first = freshVault()
-  const second = freshVault()
-  t.after(first.cleanup)
-  t.after(second.cleanup)
-
-  const { recovery } = await first.vault.create(PASSWORD)
-  await second.vault.create('An0ther-Password!', recovery.mnemonic)
-
-  for (let i = 0; i < 10; i++) {
-    assert.equal(first.vault.ownerAddress(i), second.vault.ownerAddress(i))
-  }
-})
-
-test('changing the password keeps the same seed', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
-
-  const { recovery } = await vault.create(PASSWORD)
-  await vault.changePassword(PASSWORD, 'A-Wholly-N3w-Password!')
-  vault.lock()
-
-  await assert.rejects(() => vault.unlock(PASSWORD), /Incorrect password/)
-  await vault.unlock('A-Wholly-N3w-Password!')
-  assert.equal(vault.ownerAddress(0), recovery.ownerAddress)
-})
-
-test('verify checks a password without unlocking', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
-  await vault.create(PASSWORD)
-  vault.lock()
-
-  assert.equal(await vault.verify(PASSWORD), true)
-  assert.equal(await vault.verify('nope'), false)
-  assert.equal(vault.isLocked, true, 'verify must not unlock as a side effect')
 })
 
 test('will not overwrite an existing vault', async (t) => {
-  const { vault, cleanup } = freshVault()
-  t.after(cleanup)
+  const vault = new Vault(tempDir(t))
   await vault.create(PASSWORD)
-  await assert.rejects(() => vault.create('Some0ther-Password!'), /already exists/)
+  await assert.rejects(vault.create(PASSWORD), /already set up/)
 })
 
-test('leaves no temp file behind after writing', async (t) => {
-  const { vault, dir, cleanup } = freshVault()
-  t.after(cleanup)
+test('changing the password keeps the data key', async (t) => {
+  const vault = new Vault(tempDir(t))
   await vault.create(PASSWORD)
-  assert.equal(existsSync(join(dir, 'vault.json.tmp')), false)
+  const key = Buffer.from(vault.key())
+  await vault.changePassword(PASSWORD, 'N3w&Better-Phrase')
+  vault.lock()
+  await assert.rejects(vault.unlock(PASSWORD), WrongPasswordError)
+  await vault.unlock('N3w&Better-Phrase')
+  assert.ok(vault.key().equals(key))
+})
+
+test('a version 1 vault is kept aside untouched and converted', async (t) => {
+  const dir = tempDir(t)
+  await writeV1Vault(dir, PASSWORD)
+  const original = readFileSync(join(dir, 'vault.json'), 'utf8')
+
+  const vault = new Vault(dir)
+  const result = await vault.unlock(PASSWORD)
+  assert.equal(result.migratedFromV1, true)
+  assert.equal(readFileSync(vault.backupPath, 'utf8'), original, 'the old file, with its phrase, is preserved byte for byte')
+  assert.notEqual(readFileSync(vault.path, 'utf8'), original)
+
+  vault.lock()
+  const again = await vault.unlock(PASSWORD)
+  assert.equal(again.migratedFromV1, false, 'converted once only')
+  assert.ok(!readFileSync(vault.path, 'utf8').includes('mnemonic'))
+})
+
+test('refuses a vault file whose KDF has been weakened', async (t) => {
+  const dir = tempDir(t)
+  const vault = new Vault(dir)
+  await vault.create(PASSWORD)
+  vault.lock()
+  const blob = JSON.parse(readFileSync(vault.path, 'utf8'))
+  blob.kdf.N = 2
+  writeFileSync(vault.path, JSON.stringify(blob))
+  await assert.rejects(vault.unlock(PASSWORD), CorruptVaultError)
+  assert.ok(existsSync(vault.path))
+})
+
+test('verify checks a password without unlocking', async (t) => {
+  const vault = new Vault(tempDir(t))
+  await vault.create(PASSWORD)
+  vault.lock()
+  assert.equal(await vault.verify(PASSWORD), true)
+  assert.equal(await vault.verify('Wr0ng&Password'), false)
+  assert.equal(vault.isLocked, true)
 })

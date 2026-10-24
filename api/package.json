@@ -18,8 +18,8 @@
     "@noble/hashes": "^1.6.1"
   },
   "devDependencies": {
-    "wrangler": "^3.95.0",
-    "ethers": "^6.13.4"
+    "ethers": "^6.13.4",
+    "wrangler": "^4.152.0"
   },
   "engines": {
     "node": ">=20"

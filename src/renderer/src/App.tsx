@@ -1,66 +1,67 @@
-import { useEffect, useState, type JSX } from 'react'
-import { Sidebar, TABS, type TabId } from './components/Sidebar.js'
-import { Toaster } from './components/ui.js'
-import { Home } from './views/Home.js'
-import { Send } from './views/Send.js'
-import { Receive } from './views/Receive.js'
-import { Settings } from './views/Settings.js'
-import { Onboarding } from './views/Onboarding.js'
-import { Lock } from './views/Lock.js'
-import { useApp } from './state/app.js'
+import { useEffect, type JSX } from 'react'
+import { useApp } from './state/app.tsx'
+import { Sidebar, NAV_PAGES } from './components/Sidebar.tsx'
+import { ConnectSheet } from './components/ConnectSheet.tsx'
+import { Toasts } from './components/ui.tsx'
+import { Overview } from './views/Overview.tsx'
+import { Activity } from './views/Activity.tsx'
+import { Send } from './views/Send.tsx'
+import { Receive } from './views/Receive.tsx'
+import { WalletDetail } from './views/WalletDetail.tsx'
+import { Settings } from './views/Settings.tsx'
+import { Onboarding } from './views/Onboarding.tsx'
+import { Lock } from './views/Lock.tsx'
 
 export function App(): JSX.Element {
-  const { status, loading, toasts, dismiss } = useApp()
-  const [tab, setTab] = useState<TabId>('home')
+  const { status, page, go, connectOpen, toasts, dismiss } = useApp()
 
-  // Keyboard shortcuts for the tab rail: ⌘1–⌘4 / Ctrl+1–4.
   useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (!(event.metaKey || event.ctrlKey)) return
-      const index = Number(event.key) - 1
-      if (index >= 0 && index < TABS.length) {
-        event.preventDefault()
-        setTab(TABS[index].id)
+    if (status?.platform) document.documentElement.dataset.platform = status.platform
+  }, [status?.platform])
+
+  // Cmd/Ctrl+1..4 for the main pages, Cmd/Ctrl+, for Settings.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.metaKey || e.ctrlKey) || !status || status.locked || !status.onboarded) return
+      const index = Number(e.key) - 1
+      if (index >= 0 && index < NAV_PAGES.length) {
+        e.preventDefault()
+        go(NAV_PAGES[index])
+      } else if (e.key === ',') {
+        e.preventDefault()
+        go({ name: 'settings' })
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [status, go])
 
-  useEffect(() => {
-    document.body.classList.add(`platform-${status?.platform ?? 'unknown'}`)
-  }, [status?.platform])
+  if (!status) return <div className="blank" />
 
-  if (loading || !status) {
-    return (
-      <div className="gate">
-        <div className="gate__inner" style={{ alignItems: 'center', textAlign: 'center' }}>
-          <span className="sidebar__mark gate__brand-mark">G</span>
-          <span className="muted">Opening your vault…</span>
-        </div>
+  let body: JSX.Element
+  if (!status.initialized || (!status.onboarded && !status.locked)) body = <Onboarding />
+  else if (status.locked) body = <Lock />
+  else {
+    body = (
+      <div className="shell">
+        <Sidebar />
+        <main className="content">
+          {page.name === 'overview' ? <Overview /> : null}
+          {page.name === 'activity' ? <Activity /> : null}
+          {page.name === 'send' ? <Send key={page.symbol ?? ''} symbol={page.symbol} /> : null}
+          {page.name === 'receive' ? <Receive key={page.symbol ?? ''} symbol={page.symbol} /> : null}
+          {page.name === 'wallet' ? <WalletDetail key={page.id} id={page.id} /> : null}
+          {page.name === 'settings' ? <Settings /> : null}
+        </main>
+        {connectOpen ? <ConnectSheet /> : null}
       </div>
     )
   }
 
-  if (!status.initialized) return <Onboarding />
-  if (status.locked) return <Lock />
-
   return (
-    <div className="shell">
-      <Sidebar active={tab} onChange={setTab} />
-      <main className="content">
-        {/* No title bar. The sidebar already says which tab this is, and a
-            second copy of the word costs 60px of the only thing this layout
-            is short of. */}
-        <div key={tab} className="fade-up" style={{ display: 'contents' }}>
-          {tab === 'home' && <Home onNavigate={(next) => setTab(next as TabId)} />}
-          {tab === 'send' && <Send onNavigate={(next) => setTab(next as TabId)} />}
-          {tab === 'receive' && <Receive onNavigate={(next) => setTab(next as TabId)} />}
-          {tab === 'settings' && <Settings />}
-        </div>
-      </main>
-
-      <Toaster toasts={toasts} onDismiss={dismiss} />
-    </div>
+    <>
+      {body}
+      <Toasts toasts={toasts} onDismiss={dismiss} />
+    </>
   )
 }
