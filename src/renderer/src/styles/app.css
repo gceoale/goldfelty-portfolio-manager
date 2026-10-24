@@ -44,8 +44,9 @@
   color-scheme: light;
 }
 
+/* Dark: follows the OS unless Settings forces a theme. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #1e1e1f;
     --bg-sidebar: #262627;
     --bg-raised: #2a2a2b;
@@ -76,6 +77,38 @@
     --shadow: 0 14px 50px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
     color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg: #1e1e1f;
+  --bg-sidebar: #262627;
+  --bg-raised: #2a2a2b;
+  --bg-field: #2b2b2c;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-selected: rgba(255, 255, 255, 0.1);
+  --bg-subtle: #232324;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --text: #ececee;
+  --text-2: #a6a6ab;
+  --text-3: #7c7c81;
+  --accent: #e0ad45;
+  --accent-edge: #f0c062;
+  --accent-text: #1a1a1a;
+  --accent-soft: rgba(224, 173, 69, 0.16);
+  --focus: rgba(240, 192, 98, 0.6);
+  --up: #4cc471;
+  --down: #ff6b5f;
+  --warn-bg: #3a3020;
+  --warn-line: #5e4b26;
+  --bad-bg: #3d2523;
+  --bad-line: #6a3530;
+  --info-bg: #26292e;
+  --info-line: #383d45;
+  --chart: #4a8ef0;
+  --chart-fill: rgba(74, 142, 240, 0.09);
+  --shadow: 0 14px 50px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  color-scheme: dark;
 }
 
 * {
@@ -456,10 +489,16 @@ select.input {
   padding: 0 8px 8px;
 }
 
-.sidebar-drag,
-.setup-drag {
+.sidebar-drag {
   height: 10px;
   flex: none;
+}
+
+/* Out of the layout everywhere; on macOS it is the strip the window drags by. */
+.setup-drag {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 0;
 }
 
 [data-platform='darwin'] .sidebar-drag {
@@ -468,8 +507,6 @@ select.input {
 }
 
 [data-platform='darwin'] .setup-drag {
-  position: fixed;
-  inset: 0 0 auto 0;
   height: 32px;
   -webkit-app-region: drag;
 }
@@ -817,7 +854,8 @@ select.input {
 }
 
 .alloc-col {
-  width: 150px;
+  width: 170px;
+  white-space: nowrap;
 }
 
 .alloc {
@@ -1393,7 +1431,7 @@ select.input {
 
 .setup {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   height: 100%;
 }
 

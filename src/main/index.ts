@@ -13,8 +13,11 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !app.isPackaged
 const devServer = isDev ? process.env.ELECTRON_RENDERER_URL : undefined
 
-// Every renderer sandboxed, whatever a window's own options say.
-app.enableSandbox()
+// Every renderer sandboxed, whatever a window's own options say. Skipped only
+// when Chromium's own sandbox is switched off on the command line (CI and
+// containers running as root), which would otherwise stop child processes
+// starting at all; each window still sets sandbox: true regardless.
+if (!app.commandLine.hasSwitch('no-sandbox')) app.enableSandbox()
 
 // One store, one process. A second instance would race on the encrypted file.
 if (!app.requestSingleInstanceLock()) {

@@ -15,8 +15,14 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   const raw = (max - min) / count
   const mag = 10 ** Math.floor(Math.log10(raw))
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw
+  // Start at or below the lowest value and end at or above the highest, so
+  // the line never leaves the plotted area.
   const ticks: number[] = []
-  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) ticks.push(Number(v.toFixed(10)))
+  const first = Math.floor(min / step) * step
+  for (let v = first; ticks.length < 12; v += step) {
+    ticks.push(Number(v.toFixed(10)))
+    if (v >= max - step * 1e-9) break
+  }
   return ticks
 }
 
@@ -27,13 +33,12 @@ function niceTicks(min: number, max: number, count = 4): number[] {
 export function ValueChart({
   data,
   currency,
-  range,
   height = 220,
   hidden = false
 }: {
   data: PortfolioSnapshot[]
   currency: string
-  range: HistoryRange
+  range?: HistoryRange
   height?: number
   hidden?: boolean
 }): JSX.Element {
@@ -90,6 +95,7 @@ export function ValueChart({
   }
 
   const h = hover === null ? null : geo.points[hover]
+  const span = data[data.length - 1].at - data[0].at
   const first = data[0].total
   const last = data[data.length - 1].total
 
@@ -119,7 +125,7 @@ export function ValueChart({
             y={PAD.top + geo.innerH + 18}
             textAnchor={i === 0 ? 'start' : i === geo.dateTicks.length - 1 ? 'end' : 'middle'}
           >
-            {shortDate(d.at, range)}
+            {shortDate(d.at, span)}
           </text>
         ))}
         <path className="chart-area" d={geo.area} />

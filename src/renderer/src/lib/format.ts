@@ -113,9 +113,12 @@ export function groupedAddress(address: string): string[] {
   return groups
 }
 
-export function shortDate(timestamp: number, range: string): string {
+/** An axis label fitted to how much time the chart spans. */
+export function shortDate(timestamp: number, spanMs: number): string {
   const d = new Date(timestamp)
-  if (range === '24h') return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  if (range === '1y' || range === 'all') return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const day = 86_400_000
+  if (spanMs <= 1.5 * day) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (spanMs <= 5 * day) return d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric' })
+  if (spanMs <= 300 * day) return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
 }

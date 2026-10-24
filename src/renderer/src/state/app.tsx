@@ -184,6 +184,8 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   // Everything else loads once unlocked, and is dropped on lock.
   useEffect(() => {
     if (!unlocked) {
+      // Whatever was on screen goes; unlocking starts from the Overview.
+      setPage({ name: 'overview' })
       setSettings(null)
       setWallets([])
       setConnections([])
