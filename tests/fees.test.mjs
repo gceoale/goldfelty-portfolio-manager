@@ -99,7 +99,7 @@ function setup(t) {
   store.open(randomBytes(32))
   const [wallet] = registerConnectionAccounts(
     store,
-    { id: 'frame', kind: 'frame', name: 'Frame', providerId: 'frame-desktop', rdns: null, icon: null, accounts: [USER], chainIds: [1], connectedAt: 1, active: true, topic: null },
+    { id: 'frame', kind: 'frame', family: 'evm', name: 'Frame', providerId: 'frame-desktop', rdns: null, icon: null, accounts: [USER], chainIds: [1], connectedAt: 1, active: true, topic: null },
     [1]
   )
   return { store, wallet }

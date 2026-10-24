@@ -131,6 +131,7 @@ export class WalletConnectService {
     const connection: WalletConnection = {
       id: wcConnectionId(session.topic),
       kind: 'walletconnect',
+      family: 'evm',
       name: session.peer.metadata.name || 'Phone wallet',
       providerId: 'walletconnect',
       rdns: null,

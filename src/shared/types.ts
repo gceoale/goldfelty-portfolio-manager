@@ -26,6 +26,8 @@ export interface Wallet {
   id: string
   label: string
   kind: WalletKind
+  /** Which kind of chain the address belongs to. Older data without one is `evm`. */
+  family: ChainFamily
   address: string
   /** The connection that can sign for this address, if it is still around. */
   connectionId: string | null
@@ -40,6 +42,8 @@ export interface Wallet {
   archived: boolean
   /** Shown beside read-only wallets to say why they cannot send. */
   note: string | null
+  /** Bitcoin-family wallets: the public key, hex, needed to spend from Taproot and nested-segwit addresses. */
+  publicKey?: string | null
 }
 
 /** A live or remembered link to a wallet application. */
@@ -49,8 +53,10 @@ export interface WalletConnection {
   name: string
   /** Registry id, or the EIP-6963 rdns for wallets not in the registry. */
   providerId: string
-  /** The EIP-6963 rdns a browser wallet announced, which routes its requests. */
+  /** The EIP-6963 rdns a browser wallet announced, or a family-prefixed key such as `sol:phantom`. */
   rdns: string | null
+  /** Which kind of chain this connection signs for. */
+  family: ChainFamily
   /** Data URI supplied by the wallet itself through EIP-6963. */
   icon: string | null
   accounts: string[]
@@ -64,14 +70,18 @@ export interface WalletConnection {
   active: boolean
   /** WalletConnect session topic. */
   topic: string | null
+  /** Public keys the wallet shared, by address (Bitcoin-family wallets). */
+  publicKeys?: Record<string, string>
 }
 
 /** A wallet the bridge page has seen announce itself in the user's browser. */
 export interface DetectedWallet {
   providerId: string
+  /** EIP-6963 rdns for EVM wallets; `sol:`, `btc:` or `tron:` keys for the rest. */
   rdns: string
   name: string
   icon: string | null
+  family: ChainFamily
 }
 
 /** Where a connection attempt has got to, for the connect sheet. */
@@ -88,18 +98,41 @@ export interface BridgeStatus {
   detected: DetectedWallet[]
 }
 
+/**
+ * How a chain works, which decides how Goldfelty reads balances on it, what
+ * its addresses look like, and which wallets can sign for it.
+ *
+ * - `evm`: Ethereum and the networks that work like it.
+ * - `utxo`: Bitcoin, Litecoin, Dogecoin.
+ * - `solana`, `tron`, `xrp`: one chain each.
+ */
+export type ChainFamily = 'evm' | 'utxo' | 'solana' | 'tron' | 'xrp'
+
 export interface Chain {
+  /**
+   * EVM chains use their EIP-155 chain id. Other chains use negative ids,
+   * which no EVM chain can have, so the two can never be confused.
+   */
   id: number
   key: string
   name: string
   shortName: string
+  family: ChainFamily
   nativeSymbol: string
   nativeName: string
   decimals: number
+  /** JSON-RPC endpoints for EVM chains; for others, the API base URLs Goldfelty reads from. */
   rpcUrls: string[]
   explorer: string
+  /** A transaction's page on the explorer, with `{hash}` in place of its id. */
+  explorerTx: string
   color: string
   testnet: boolean
+  /**
+   * Whether a connected wallet can be asked to send here. False where no
+   * wallet offers apps a documented way to request a payment.
+   */
+  canSend: boolean
 }
 
 export interface TokenDef {

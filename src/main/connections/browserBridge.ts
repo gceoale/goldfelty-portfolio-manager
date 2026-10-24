@@ -2,7 +2,19 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { BRIDGE_PAGE } from './bridgePage.ts'
 import { providerIdFor } from '../../shared/walletRegistry.ts'
-import type { BridgeStatus, DetectedWallet } from '../../shared/types.ts'
+import type { BridgeStatus, ChainFamily, DetectedWallet } from '../../shared/types.ts'
+
+/**
+ * Which chain family a provider key belongs to. EVM wallets are keyed by
+ * their EIP-6963 rdns; the page keys the rest with a family prefix. The
+ * family comes from the key, never from anything else the page claims.
+ */
+export function familyOfKey(key: string): ChainFamily {
+  if (key.startsWith('sol:')) return 'solana'
+  if (key.startsWith('btc:')) return 'utxo'
+  if (key.startsWith('tron:')) return 'tron'
+  return 'evm'
+}
 
 /**
  * Goldfelty's own connection to browser-extension wallets.
@@ -241,7 +253,7 @@ export class BrowserBridge {
     for (const page of this.pages.values()) {
       for (const p of page.providers.values()) {
         if (seen.has(p.rdns)) continue
-        seen.set(p.rdns, { rdns: p.rdns, name: p.name, icon: p.icon, providerId: providerIdFor(p.rdns, p.name) })
+        seen.set(p.rdns, { rdns: p.rdns, name: p.name, icon: p.icon, providerId: providerIdFor(p.rdns, p.name), family: familyOfKey(p.rdns) })
       }
     }
     return [...seen.values()]

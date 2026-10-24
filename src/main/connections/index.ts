@@ -150,6 +150,7 @@ export class ConnectionManager {
     const connection: WalletConnection = {
       id: browserConnectionId(found.rdns),
       kind: 'browser',
+      family: 'evm',
       name: found.name,
       providerId: found.providerId,
       rdns: found.rdns,
@@ -187,6 +188,7 @@ export class ConnectionManager {
     const connection: WalletConnection = {
       id: FRAME_CONNECTION_ID,
       kind: 'frame',
+      family: 'evm',
       name: 'Frame',
       providerId: FRAME_ID,
       rdns: null,

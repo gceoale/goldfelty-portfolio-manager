@@ -35,6 +35,7 @@ function connection(overrides = {}) {
   return {
     id: 'browser:io.metamask',
     kind: 'browser',
+    family: 'evm',
     name: 'MetaMask',
     providerId: 'metamask',
     rdns: 'io.metamask',
@@ -87,7 +88,7 @@ test('reconnecting re-points an existing address instead of duplicating it', (t)
   registerConnectionAccounts(store, connection(), [1])
   detachConnection(store, 'browser:io.metamask')
   assert.equal(store.wallets[0].connectionId, null)
-  registerConnectionAccounts(store, connection({ id: 'frame', kind: 'frame', name: 'Frame', providerId: 'frame-desktop', rdns: null }), [1])
+  registerConnectionAccounts(store, connection({ id: 'frame', kind: 'frame', family: 'evm', name: 'Frame', providerId: 'frame-desktop', rdns: null }), [1])
   assert.equal(store.wallets.length, 1)
   assert.equal(store.wallets[0].kind, 'frame')
   assert.equal(store.wallets[0].connectionId, 'frame')
@@ -224,7 +225,7 @@ test('tracking refuses typos, duplicates, and unknown apps get a plain label', (
   const i = A.indexOf('E')
   const badChecksum = A.slice(0, i) + 'e' + A.slice(i + 1)
   assert.throws(() => trackAddress(store, { address: badChecksum }, [1]), /valid address/)
-  assert.throws(() => trackAddress(store, { address: 'not an address' }, [1]), /valid address/)
+  assert.throws(() => trackAddress(store, { address: 'not an address' }, [1]), /recognise that address/)
   const w = trackAddress(store, { address: B, label: '  Cold storage  ', providerId: 'made-up' }, [1])
   assert.equal(w.label, 'Cold storage')
   assert.equal(w.providerId, null)
@@ -237,4 +238,25 @@ test('connecting a tracked address later upgrades it in place', (t) => {
   registerConnectionAccounts(store, connection(), [1])
   assert.equal(store.wallets.length, 1)
   assert.equal(store.wallets[0].kind, 'browser')
+})
+
+test('any chain’s address can be tracked, and lands on the right chain', (t) => {
+  const store = openStore(t)
+  const cases = [
+    ['bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'utxo', [-1]],
+    ['DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L', 'utxo', [-3]],
+    ['LVg2kJoFNg45Nbpy53h7Fe1wKyeXVRhMH9', 'utxo', [-2]],
+    ['TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', 'tron', [-195]],
+    ['rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', 'xrp', [-144]],
+    ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'solana', [-501]]
+  ]
+  for (const [address, family, chainIds] of cases) {
+    const w = trackAddress(store, { address, providerId: 'exodus-desktop' }, [1])
+    assert.equal(w.family, family, address)
+    assert.deepEqual(w.chainIds, chainIds, address)
+    assert.equal(w.kind, 'readonly')
+  }
+  // A one-character slip in a checksummed format is refused.
+  assert.throws(() => trackAddress(store, { address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdr' }, [1]), /recognise/)
+  assert.throws(() => trackAddress(store, { address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6u' }, [1]), /recognise/)
 })

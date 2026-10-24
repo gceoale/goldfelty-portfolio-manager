@@ -13,7 +13,7 @@ const REQUEST_TIMEOUT_MS = 12_000
 const cooldown = new Map<string, number>()
 const COOLDOWN_MS = 60_000
 
-function endpointsFor(chainId: number, settings: Settings): string[] {
+export function endpointsFor(chainId: number, settings: Settings): string[] {
   const chain = getChain(chainId)
   const custom = settings.customRpc?.[chainId]
   const all = custom ? [custom, ...chain.rpcUrls] : [...chain.rpcUrls]
@@ -24,11 +24,11 @@ function endpointsFor(chainId: number, settings: Settings): string[] {
   return healthy.length > 0 ? healthy : all
 }
 
-function markFailed(url: string): void {
+export function markFailed(url: string): void {
   cooldown.set(url, Date.now() + COOLDOWN_MS)
 }
 
-function markHealthy(url: string): void {
+export function markHealthy(url: string): void {
   cooldown.delete(url)
 }
 

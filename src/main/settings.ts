@@ -99,7 +99,8 @@ export function applySettingsPatch(current: Settings, patch: unknown): Settings 
   }
 
   if ('enabledChains' in p && Array.isArray(p.enabledChains)) {
-    const ids = [...new Set(p.enabledChains.map(Number).filter((id) => CHAIN_BY_ID.has(id)))]
+    // Only EVM networks are switched on and off; other chains are always on.
+    const ids = [...new Set(p.enabledChains.map(Number).filter((id) => CHAIN_BY_ID.get(id)?.family === 'evm'))]
     if (ids.length === 0) throw new SettingsError('Keep at least one network turned on.')
     next.enabledChains = ids
   }
