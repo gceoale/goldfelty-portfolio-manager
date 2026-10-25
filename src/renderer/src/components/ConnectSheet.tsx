@@ -62,8 +62,21 @@ export function ConnectSheet({ onDone }: { onDone?: (wallets: Wallet[]) => void 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const detected: DetectedWallet[] = bridge?.detected ?? []
-  const detectedIds = new Set(detected.map((d) => d.providerId))
+  // A wallet that does several chains announces once per chain; list it once.
+  const detected = useMemo(() => {
+    const byId = new Map<string, { d: DetectedWallet; families: Set<string> }>()
+    for (const d of bridge?.detected ?? []) {
+      const entry = byId.get(d.providerId)
+      if (entry) {
+        entry.families.add(d.family)
+        if (!entry.d.icon && d.icon) entry.d = { ...entry.d, icon: d.icon }
+      } else {
+        byId.set(d.providerId, { d, families: new Set([d.family]) })
+      }
+    }
+    return [...byId.values()]
+  }, [bridge])
+  const detectedIds = new Set(detected.map(({ d }) => d.providerId))
   const q = query.trim().toLowerCase()
   const matches = (name: string): boolean => !q || name.toLowerCase().includes(q)
   const browserWallets = useMemo(
@@ -201,19 +214,26 @@ export function ConnectSheet({ onDone }: { onDone?: (wallets: Wallet[]) => void 
               : 'Pick your wallet and Goldfelty opens a tab in your default browser to reach it.'}
           </p>
           <ul className="pick-list">
-            {detected.filter((d) => matches(d.name)).map((d) => (
+            {detected.filter(({ d }) => matches(d.name)).map(({ d, families }) => (
               <PickRow
-                key={d.rdns}
+                key={d.providerId}
                 name={d.name}
                 color="#8e8e93"
                 icon={d.icon}
-                note="Found in your browser"
+                note={`Found in your browser · ${familyNames([...families])}`}
                 disabled={!!busy}
                 onClick={() => void connectBrowser(providerIdFor(d.rdns, d.name), d.name)}
               />
             ))}
             {browserWallets.map((w: RegistryWallet) => (
-              <PickRow key={w.id} name={w.name} color={w.color} disabled={!!busy} onClick={() => void connectBrowser(w.id, w.name, w.homepage)} />
+              <PickRow
+                key={w.id}
+                name={w.name}
+                color={w.color}
+                note={w.families && w.families.some((f) => f !== 'evm') ? familyNames(w.families) : undefined}
+                disabled={!!busy}
+                onClick={() => void connectBrowser(w.id, w.name, w.homepage)}
+              />
             ))}
           </ul>
           <div className="list-foot">
@@ -322,7 +342,7 @@ function TrackForm({
           <p className="muted small">In Exodus, open Ethereum (or any network you use), choose Receive, and copy the address. One address covers every network Goldfelty tracks.</p>
         ) : null}
         <Field label="Address" htmlFor="track-address" error={error}>
-          <TextInput id="track-address" mono autoFocus placeholder="0x…" value={address} onChange={(e) => setAddress(e.target.value.trim())} />
+          <TextInput id="track-address" mono autoFocus placeholder="0x…, bc1…, T…, r… or a Solana address" value={address} onChange={(e) => setAddress(e.target.value.trim())} />
         </Field>
         <Field label="Name" htmlFor="track-label">
           <TextInput id="track-label" maxLength={48} value={label} onChange={(e) => setLabel(e.target.value)} />
@@ -330,6 +350,13 @@ function TrackForm({
       </form>
     </Sheet>
   )
+}
+
+const FAMILY_NAMES: Record<string, string> = { evm: 'Ethereum', utxo: 'Bitcoin', solana: 'Solana', tron: 'Tron', xrp: 'XRP' }
+const FAMILY_ORDER = ['evm', 'utxo', 'solana', 'tron', 'xrp']
+
+function familyNames(families: string[]): string {
+  return [...families].sort((a, b) => FAMILY_ORDER.indexOf(a) - FAMILY_ORDER.indexOf(b)).map((f) => FAMILY_NAMES[f] ?? f).join(', ')
 }
 
 function PickRow({

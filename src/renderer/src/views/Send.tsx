@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import type { RouteOption, SendableAsset, SendQuote, SendResult } from '@shared/types.ts'
 import { formatFeeRate } from '@shared/fees.ts'
+import { CHAIN_BY_ID } from '@shared/chains.ts'
 import { useApp } from '../state/app.tsx'
 import { AssetGlyph, Button, Empty, Field, Notice, Sheet, Spinner, StatusDot, TextInput, Toolbar, WalletGlyph } from '../components/ui.tsx'
 import { WarningIcon } from '../components/Icons.tsx'
@@ -47,8 +48,9 @@ export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Elemen
 
   const route = routes.find((r) => keyOf(r) === routeKey) ?? null
   const asset = assets?.find((a) => a.symbol === symbol) ?? null
+  const family = route ? (CHAIN_BY_ID.get(route.chainId)?.family ?? 'evm') : 'evm'
   const ownAddresses = useMemo(
-    () => wallets.filter((w) => !w.archived && w.kind !== 'readonly' && w.address !== route?.address),
+    () => wallets.filter((w) => !w.archived && w.address !== route?.address && route && w.chainIds.includes(route.chainId)),
     [wallets, route]
   )
 
@@ -58,7 +60,8 @@ export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Elemen
     setQuoteError(null)
   }, [routeKey, to, amount])
 
-  const ready = !!route && /^0x[0-9a-fA-F]{40}$/.test(to.trim()) && Number(amount) > 0
+  // A first look only; the main process checks the address properly for its chain.
+  const ready = !!route && looksLikeAddress(family, to.trim()) && Number(amount) > 0
 
   const review = async (): Promise<void> => {
     if (!route) return
@@ -171,7 +174,7 @@ export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Elemen
           </Field>
 
           <Field label="To" htmlFor="send-to" hint="Paste the full address and check it character by character.">
-            <TextInput id="send-to" mono placeholder="0x…" value={to} onChange={(e) => setTo(e.target.value.trim())} />
+            <TextInput id="send-to" mono placeholder={PLACEHOLDER[family] ?? '0x…'} value={to} onChange={(e) => setTo(e.target.value.trim())} />
             {ownAddresses.length > 0 ? (
               <select
                 className="input input-quiet"
@@ -260,7 +263,9 @@ export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Elemen
               ))}
               <p className="muted small">
                 {quote.fee
-                  ? `${quote.providerName} will ask you to approve two transactions: your transfer, then the ${formatFeeRate(quote.fee.bps)} Goldfelty fee. `
+                  ? feeInSameTransaction(quote.chainId)
+                    ? `${quote.providerName} will show one transaction to approve, paying both the recipient and the ${formatFeeRate(quote.fee.bps)} Goldfelty fee. `
+                    : `${quote.providerName} will ask you to approve two transactions: your transfer, then the ${formatFeeRate(quote.fee.bps)} Goldfelty fee. `
                   : `${quote.providerName} will show you the transfer to approve. `}
                 Check the address there too.
               </p>
@@ -281,7 +286,12 @@ export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Elemen
                 {phase.quote.providerName} should be showing a request to send {tokenAmount(phase.quote.amount, phase.quote.symbol)} to{' '}
                 <span className="mono">{shortAddress(phase.quote.to)}</span>.
               </p>
-              {phase.quote.fee ? <p className="muted">After that, it asks for the Goldfelty fee of {tokenAmount(phase.quote.fee.amount, phase.quote.fee.symbol)}.</p> : null}
+              {phase.quote.fee && !feeInSameTransaction(phase.quote.chainId) ? (
+                <p className="muted">After that, it asks for the Goldfelty fee of {tokenAmount(phase.quote.fee.amount, phase.quote.fee.symbol)}.</p>
+              ) : null}
+              {phase.quote.fee && feeInSameTransaction(phase.quote.chainId) ? (
+                <p className="muted">The same transaction pays the Goldfelty fee of {tokenAmount(phase.quote.fee.amount, phase.quote.fee.symbol)}.</p>
+              ) : null}
               {route?.walletKind === 'browser' ? <p className="muted small">It appears in your browser, in the Goldfelty tab.</p> : null}
               {route?.walletKind === 'walletconnect' ? <p className="muted small">Check your phone.</p> : null}
             </div>
@@ -311,15 +321,22 @@ export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Elemen
           }
         >
           <p>
-            {wallet} broadcast your transfer of {tokenAmount(phase.quote.amount, phase.quote.symbol)}. It usually confirms within a minute; Activity shows when it
-            does.
+            Your transfer of {tokenAmount(phase.quote.amount, phase.quote.symbol)} from {wallet} is on its way.{' '}
+            {CHAIN_BY_ID.get(phase.quote.chainId)?.family === 'utxo'
+              ? 'Bitcoin usually confirms within an hour, sometimes longer; '
+              : 'It usually confirms within a minute; '}
+            Activity shows when it does.
           </p>
           <p>
             <button type="button" className="link" onClick={() => void api.app.openExternal(phase.result.explorerUrl)}>
               View it on the block explorer
             </button>
           </p>
-          {phase.result.fee?.status === 'sent' ? <p className="muted small">The Goldfelty fee was sent as a separate transaction.</p> : null}
+          {phase.result.fee?.status === 'sent' ? (
+            <p className="muted small">
+              {feeInSameTransaction(phase.quote.chainId) ? 'The Goldfelty fee was part of the same transaction.' : 'The Goldfelty fee was sent as a separate transaction.'}
+            </p>
+          ) : null}
           {phase.result.fee && phase.result.fee.status !== 'sent' ? (
             <Notice tone="warn">The Goldfelty fee wasn’t sent: {phase.result.fee.message}</Notice>
           ) : null}
@@ -327,6 +344,19 @@ export function Send({ symbol: initialSymbol }: { symbol?: string }): JSX.Elemen
       ) : null}
     </div>
   )
+}
+
+const PLACEHOLDER: Record<string, string> = { evm: '0x…', utxo: 'bc1…', solana: 'Solana address', tron: 'T…' }
+
+function looksLikeAddress(family: string, text: string): boolean {
+  if (family === 'evm') return /^0x[0-9a-fA-F]{40}$/.test(text)
+  return /^[0-9A-Za-z]{25,90}$/.test(text)
+}
+
+/** Bitcoin and Solana carry the fee inside the transfer itself; elsewhere it is its own transaction. */
+function feeInSameTransaction(chainId: number): boolean {
+  const family = CHAIN_BY_ID.get(chainId)?.family
+  return family === 'utxo' || family === 'solana'
 }
 
 function keyOf(r: RouteOption): string {

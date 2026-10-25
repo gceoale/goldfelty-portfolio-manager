@@ -127,7 +127,8 @@ export function WalletDetail({ id }: { id: string }): JSX.Element {
 
         <Group title="Networks" footer="Goldfelty reads balances on these networks for this wallet.">
           {chains
-            .filter((c) => settings?.enabledChains.includes(c.id))
+            .filter((c) => c.family === (wallet.family ?? 'evm') && (c.family !== 'evm' || settings?.enabledChains.includes(c.id)))
+            .filter((c) => c.family === 'evm' || wallet.chainIds.includes(c.id))
             .map((c) => (
               <Row key={c.id} label={c.name}>
                 <input

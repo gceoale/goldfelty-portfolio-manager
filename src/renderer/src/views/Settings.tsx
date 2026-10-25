@@ -113,7 +113,7 @@ function AccountSection(): JSX.Element {
   const [signer, setSigner] = useState('')
   const [busy, setBusy] = useState(false)
   const account = status?.account ?? null
-  const signers = wallets.filter((w) => w.kind !== 'readonly' && w.connectionId && !w.archived)
+  const signers = wallets.filter((w) => w.kind !== 'readonly' && (w.family ?? 'evm') === 'evm' && w.connectionId && !w.archived)
 
   useEffect(() => {
     void api.account.apiStatus().then((r) => r.ok && setApiStatus(r.data))
@@ -242,31 +242,35 @@ function Networks({ settings, update }: { settings: SettingsT; update: (p: Parti
   return (
     <Group title="Networks" footer="Custom endpoints must be https://, or http:// on this computer. They’re tried before the built-in ones.">
       {chains.map((c) => {
-        const on = settings.enabledChains.includes(c.id)
+        const evm = c.family === 'evm'
+        // Other chains are always on: their wallets are only ever on that chain.
+        const on = !evm || settings.enabledChains.includes(c.id)
         return (
-          <Row key={c.id} label={c.name} detail={probe[c.id] ?? (c.testnet ? 'Test network' : undefined)}>
+          <Row key={c.id} label={c.name} detail={probe[c.id] ?? (c.testnet ? 'Test network' : !c.canSend ? 'Balances only' : undefined)}>
             {on ? (
               <>
                 <TextInput
                   className="input-small"
-                  placeholder="Custom RPC (optional)"
+                  placeholder={evm ? 'Custom RPC (optional)' : 'Custom API (optional)'}
                   value={rpc[c.id] ?? ''}
                   onChange={(e) => setRpc((r) => ({ ...r, [c.id]: e.target.value }))}
                   onBlur={() => (rpc[c.id] ?? '') !== (settings.customRpc[c.id] ?? '') && void update({ customRpc: { [c.id]: rpc[c.id] ?? '' } })}
-                  aria-label={`${c.name} custom RPC`}
+                  aria-label={`${c.name} custom ${evm ? 'RPC' : 'API'}`}
                 />
                 <Button small onClick={() => void test(c.id)}>
                   Test
                 </Button>
               </>
             ) : null}
-            <Toggle
-              label={c.name}
-              checked={on}
-              onChange={(v) =>
-                void update({ enabledChains: v ? [...settings.enabledChains, c.id] : settings.enabledChains.filter((x) => x !== c.id) })
-              }
-            />
+            {evm ? (
+              <Toggle
+                label={c.name}
+                checked={on}
+                onChange={(v) =>
+                  void update({ enabledChains: v ? [...settings.enabledChains, c.id] : settings.enabledChains.filter((x) => x !== c.id) })
+                }
+              />
+            ) : null}
           </Row>
         )
       })}
@@ -284,7 +288,7 @@ function FeesSection(): JSX.Element {
         label="Goldfelty fee"
         detail={
           fee?.enabled
-            ? `${formatFeeRate(fee.bps)} of each token you send through Goldfelty, on networks where it applies. It is shown before every send and approved in your wallet as its own transaction.`
+            ? `${formatFeeRate(fee.bps)} of each token you send through Goldfelty, on networks where it applies. It is shown before every send and approved in your wallet: inside the same transaction on Bitcoin and Solana, as its own transaction elsewhere.`
             : 'This build charges no fee.'
         }
       >

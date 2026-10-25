@@ -184,7 +184,7 @@ function ConnectStep({ onNext }: { onNext: () => void }): JSX.Element {
 function AccountStep({ onDone }: { onDone: () => void }): JSX.Element {
   const { wallets, notify, updateSettings } = useApp()
   const [share, setShare] = useState(false)
-  const signers = wallets.filter((w) => w.kind !== 'readonly' && w.connectionId)
+  const signers = wallets.filter((w) => w.kind !== 'readonly' && (w.family ?? 'evm') === 'evm' && w.connectionId)
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [signer, setSigner] = useState(signers[0]?.id ?? '')

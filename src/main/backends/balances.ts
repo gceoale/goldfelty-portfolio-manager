@@ -1,4 +1,4 @@
-import { BackendRefusal, getJson, jsonRpc, postJson } from './http.ts'
+import { BackendRefusal, getJson, jsonRpc, postJson, request } from './http.ts'
 import type { Chain, Settings, TokenDef } from '../../shared/types.ts'
 
 /**
@@ -137,5 +137,29 @@ async function readXrp(chain: Chain, address: string, tokens: TokenDef[], settin
   } catch (error) {
     if (error instanceof BackendRefusal && /actNotFound/.test(error.body)) return nativeOnly(tokens, 0n)
     throw error
+  }
+}
+
+/** The chain's current height from its API, to check an endpoint works. */
+export async function readHeight(chain: Chain, settings: Settings): Promise<number> {
+  switch (chain.family) {
+    case 'utxo':
+      if (chain.key === 'dogecoin') {
+        const body = await getJson<{ data?: { blocks?: number } }>(chain.id, settings, '/stats')
+        return Number(body.data?.blocks ?? NaN)
+      }
+      return Number((await request(chain.id, settings, '/blocks/tip/height')).trim())
+    case 'solana':
+      return Number(await jsonRpc<number>(chain.id, settings, 'getBlockHeight', []))
+    case 'tron': {
+      const body = await postJson<{ block_header?: { raw_data?: { number?: number } } }>(chain.id, settings, '/wallet/getnowblock', {})
+      return Number(body.block_header?.raw_data?.number ?? NaN)
+    }
+    case 'xrp': {
+      const body = await postJson<{ result?: { ledger_current_index?: number } }>(chain.id, settings, '', { method: 'ledger_current', params: [{}] })
+      return Number(body.result?.ledger_current_index ?? NaN)
+    }
+    default:
+      throw new Error('Not a chain with an API.')
   }
 }

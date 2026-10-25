@@ -135,6 +135,18 @@ export function disposeProviders(): void {
 /** Cheap reachability probe used by Settings → Networks. */
 export async function probeChain(chainId: number, settings: Settings): Promise<{ ok: boolean; blockNumber?: number; latencyMs?: number; error?: string }> {
   const started = Date.now()
+  const chain = getChain(chainId)
+  if (chain.family !== 'evm') {
+    try {
+      // Imported here: the balance readers import this module.
+      const { readHeight } = await import('./backends/balances.ts')
+      const height = await readHeight(chain, settings)
+      if (!Number.isFinite(height)) throw new Error('unexpected answer')
+      return { ok: true, blockNumber: height, latencyMs: Date.now() - started }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
   try {
     const [result] = await rpcBatch(chainId, [{ method: 'eth_blockNumber', params: [] }], settings)
     if (!result) throw new Error('empty response')
