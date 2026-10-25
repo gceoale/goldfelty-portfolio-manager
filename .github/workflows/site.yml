@@ -25,6 +25,8 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       # enablement turns Pages on via the API using the workflow's own token,
       # so nobody has to visit Settings first. It is a no-op once enabled.
       - uses: actions/configure-pages@v5

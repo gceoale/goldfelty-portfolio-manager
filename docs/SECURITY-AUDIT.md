@@ -104,7 +104,7 @@ Severity: **High** can lose funds or expose secrets with little user action;
 | A5 | EIP-6963 has no authentication, so a malicious extension can announce itself as any wallet. | Inherent to browser wallets. The user still approves everything in what they believe is their wallet; the post-send mismatch check (L3) catches substituted transfers after the fact. |
 | A6 | Public RPC providers and the price feed can report false balances and prices. | Display only. Users can set their own node per network. |
 | A7 | A user can decline the fee transaction. | A business choice, covered in the Terms. Charging the fee first would mean charging for transfers that never happen. |
-| A8 | Wrangler's local development server (miniflare) pulls in an `undici` with known advisories. | Development only, never deployed; already on the latest wrangler. |
+| A8 | Wrangler's local development server (miniflare) pulls in an `undici` with known advisories. | Resolved 25 October 2026: `api/package.json` overrides `undici` to a patched 7.30.x; `npm audit` in `api/` reports 0. |
 | A9 | Funds already sent to 1.0 smart-account addresses can't be recovered. | Nothing in software can move them; see H3. |
 | A10 | The owner dashboard is protected by a single bearer secret. | Use a long random value and rotate it by updating the `GOLDFELTY_ADMIN_TOKEN` secret and redeploying. |
 | A11 | Account emails are stored in plaintext in D1. | Needed to contact users; D1 is encrypted at rest by Cloudflare. |
@@ -133,6 +133,14 @@ the review screen and the network change what is sent?
 - `api/`: 35 tests, including the Worker's SQL run against real SQLite.
 - `scripts/e2e.cjs`: drives the built app with fake EVM, Solana (Wallet Standard) and Bitcoin (UniSat) wallets in a real browser tab, sends ETH, SOL and BTC and checks each broadcast transaction's recipient and fee, the real account API code and mock RPC. It checks that the renderer can't reach the network, a reused bridge link is refused, a send goes out on the right chain with the right fee, and no wallet address or email is readable in any file on disk. Any CSP violation or console error fails the run.
 - `npm audit`: 0 vulnerabilities in the app.
+
+## Follow-up review, 25 October 2026
+
+| ID | Severity | Finding | Status |
+|---|---|---|---|
+| F1 | High (development only) | `undici` 7.29.1 under wrangler/miniflare: GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472. Never deployed to the Worker. | Fixed: overridden to 7.30.1. |
+| F2 | Low | The release workflow's third-party action, which holds a token that can write releases, was referenced by a movable tag. | Fixed: pinned to a commit. |
+| F3 | Low | The site deploy workflow left checkout credentials on disk. | Fixed: `persist-credentials: false`. |
 
 ## Recommended next steps
 
