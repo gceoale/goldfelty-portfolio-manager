@@ -1,7 +1,7 @@
 // Point the main button at the right installer, and show the current fee.
 (function () {
   'use strict'
-  var REPO = 'gceoalexyt-ops/goldfelty-portfolio-manager'
+  var REPO = 'gceoale/goldfelty-portfolio-manager'
   var note = document.getElementById('platform-note')
   var primary = document.getElementById('primary')
 

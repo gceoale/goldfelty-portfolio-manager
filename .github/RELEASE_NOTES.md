@@ -19,7 +19,7 @@ the [Terms](https://goldfelty.com/terms/).
 
 **Security.** Everything Goldfelty stores is now encrypted with your password.
 Electron 44, locked-down builds, and a full internal security review:
-[docs/SECURITY-AUDIT.md](https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
+[docs/SECURITY-AUDIT.md](https://github.com/gceoale/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
 
 **Upgrading from 1.0.** Unlock with your existing password. Addresses that 1.0
 created are kept as read-only; don't send anything to them. Your old encrypted

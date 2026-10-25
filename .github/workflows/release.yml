@@ -184,7 +184,8 @@ jobs:
           done | sort -k2) > sums/SHA256SUMS.txt
           cat sums/SHA256SUMS.txt
 
-      - uses: softprops/action-gh-release@v2
+      # Pinned to a commit: this step holds a token that can write releases.
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           # On a manual run the tag does not exist yet; creating it here is the
           # point, since it pins the release to the commit that was built.
