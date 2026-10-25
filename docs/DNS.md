@@ -31,7 +31,7 @@ domain to `goldfelty.com` and tick *Enforce HTTPS* once the certificate issues.
 | A | @ | 185.199.109.153 | DNS only |
 | A | @ | 185.199.110.153 | DNS only |
 | A | @ | 185.199.111.153 | DNS only |
-| CNAME | www | gceoalexyt-ops.github.io | DNS only |
+| CNAME | www | gceoale.github.io | DNS only |
 
 Leave the proxy **off** (grey cloud) until GitHub has issued its certificate.
 Pages validates over plain DNS, and proxying breaks that. Turn it on afterwards

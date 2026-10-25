@@ -112,7 +112,8 @@ address set charges no fee.
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Repository secrets | Deploying api.goldfelty.com, so sign-up works. See [api/README.md](api/README.md). |
 | `GOLDFELTY_ADMIN_TOKEN` | Repository secret | The owner dashboard at goldfelty.com/admin. Any random string of 32+ characters. |
 | `WALLETCONNECT_PROJECT_ID` | Repository variable (optional) | Overrides the project ID that ships with the build. |
-| `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Repository secrets (optional) | Signing and notarising the builds. |
+| `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Repository secrets (optional) | Signing and notarising the Mac builds. See [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md). |
+| `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` (secrets); `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERTIFICATE_PROFILE`, `AZURE_PUBLISHER_NAME` (variables) | Optional | Signing the Windows builds through Azure Trusted Signing. |
 
 ## Working on it
 
@@ -175,7 +176,7 @@ that it was built by this repository's release workflow from a specific
 commit. With the [GitHub CLI](https://cli.github.com):
 
 ```sh
-gh attestation verify <downloaded file> --repo gceoalexyt-ops/goldfelty-portfolio-manager
+gh attestation verify <downloaded file> --repo gceoale/goldfelty-portfolio-manager
 ```
 
 A file changed anywhere after the build fails that check. Downloads come from

@@ -80,7 +80,7 @@ below cover them.
 
   ```sh
   gh attestation verify "Goldfelty Portfolio Manager-1.2.0-arm64.dmg" \
-    --repo gceoalexyt-ops/goldfelty-portfolio-manager
+    --repo gceoale/goldfelty-portfolio-manager
   ```
 
   A file altered or swapped anywhere after the build fails this check, even if

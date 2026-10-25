@@ -222,7 +222,7 @@ jobs:
 
       # A signed record, in GitHub's public transparency log, that each file was
       # built by this workflow from this commit. Anyone can check a download:
-      #   gh attestation verify <file> --repo gceoalexyt-ops/goldfelty-portfolio-manager
+      #   gh attestation verify <file> --repo gceoale/goldfelty-portfolio-manager
       # A file swapped anywhere after the build fails that check. Attestations
       # need a public repository (or GitHub Enterprise), hence not fatal.
       - name: Attest build provenance

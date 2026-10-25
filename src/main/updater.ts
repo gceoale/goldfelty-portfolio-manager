@@ -20,7 +20,7 @@ import type { InstallKind, UpdateStatus } from '../shared/types.ts'
  * from the same release. Requests go only to GitHub, over HTTPS.
  */
 
-export const REPO = 'gceoalexyt-ops/goldfelty-portfolio-manager'
+export const REPO = 'gceoale/goldfelty-portfolio-manager'
 const API = `https://api.github.com/repos/${REPO}`
 /** Hosts a release download may come from or redirect through. */
 const HOSTS = new Set(['api.github.com', 'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'github-releases.githubusercontent.com'])

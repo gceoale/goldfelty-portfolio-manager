@@ -3,7 +3,7 @@
 (function () {
   'use strict'
   var API = 'https://api.goldfelty.com/v1/admin/stats'
-  var REPO = 'gceoalexyt-ops/goldfelty-portfolio-manager'
+  var REPO = 'gceoale/goldfelty-portfolio-manager'
   var KEY = 'goldfelty-admin-token'
   var $ = function (id) { return document.getElementById(id) }
 

@@ -30,7 +30,7 @@ a signed, public record that it was built by this repository’s release
 workflow from this exact commit.
 
 ```bash
-gh attestation verify <file> --repo gceoalexyt-ops/goldfelty-portfolio-manager
+gh attestation verify <file> --repo gceoale/goldfelty-portfolio-manager
 ```
 
 **Automatic updates.** From this version on, Goldfelty updates itself the way
@@ -48,7 +48,7 @@ chains above.
 Also: `SHA256SUMS.txt` lists files under the names GitHub serves them as, so
 `shasum -c` checks the macOS and Windows downloads too.
 
-See the [security review](https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
+See the [security review](https://github.com/gceoale/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
 
 ## Which file do I download?
 
