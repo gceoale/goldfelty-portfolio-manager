@@ -78,9 +78,17 @@ if (token) {
     if (v.body.success && v.body.result?.status === 'active') ok('CLOUDFLARE_API_TOKEN', 'Cloudflare says the token is active.')
     else bad('CLOUDFLARE_API_TOKEN', `Cloudflare doesn’t accept it (${v.status}${v.body.errors?.[0]?.message ? `: ${v.body.errors[0].message}` : ''}).`)
     if (account && /^[0-9a-f]{32}$/.test(account)) {
-      const a = await cloudflare(`/accounts/${account}`, token)
-      if (a.body.success) ok('CLOUDFLARE_ACCOUNT_ID', 'Matches an account the token can reach.')
-      else bad('CLOUDFLARE_ACCOUNT_ID', `The token can’t reach that account (${a.status}). Check the ID, and that the token was made for this account.`)
+      // Exactly what the deploy does: Workers and D1 on this account.
+      const [workers, d1] = await Promise.all([cloudflare(`/accounts/${account}/workers/scripts`, token), cloudflare(`/accounts/${account}/d1/database`, token)])
+      if (workers.body.success && d1.body.success) {
+        ok('CLOUDFLARE_ACCOUNT_ID', 'Right account: the token can manage its Workers and D1 databases.')
+      } else if (!workers.body.success && !d1.body.success) {
+        bad('CLOUDFLARE_ACCOUNT_ID', `The token can’t reach that account (${workers.status}). Either the ID is wrong, or the token’s Account Resources don’t include this account.`)
+      } else {
+        const missing = workers.body.success ? 'Account > D1 > Edit' : 'Account > Workers Scripts > Edit'
+        ok('CLOUDFLARE_ACCOUNT_ID', 'Right account.')
+        bad('CLOUDFLARE_API_TOKEN', `Active, but missing the ${missing} permission.`)
+      }
     }
   } catch (error) {
     bad('CLOUDFLARE_API_TOKEN', `Couldn’t reach Cloudflare to check: ${error.message}`)
