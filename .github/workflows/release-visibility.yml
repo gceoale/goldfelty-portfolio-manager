@@ -10,10 +10,10 @@ on:
         required: true
         type: string
       action:
-        description: 'hide = back to draft, show = publish again as latest'
+        description: 'hide = back to draft, show = publish as latest, show-older = publish but keep the current latest'
         required: true
         type: choice
-        options: [hide, show]
+        options: [hide, show, show-older]
 
 permissions:
   contents: write
@@ -32,9 +32,10 @@ jobs:
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Tag must look like v1.2.0"; exit 1
           fi
-          if [ "$ACTION" = hide ]; then
-            gh release edit "$TAG" --draft=true
-          else
-            gh release edit "$TAG" --draft=false --latest
-          fi
+          case "$ACTION" in
+            hide) gh release edit "$TAG" --draft=true ;;
+            show) gh release edit "$TAG" --draft=false --latest ;;
+            show-older) gh release edit "$TAG" --draft=false --latest=false ;;
+            *) echo "::error::Unknown action $ACTION"; exit 1 ;;
+          esac
           gh release list --limit 5
