@@ -28,7 +28,7 @@ mac:
     - target: zip
       arch: [arm64, x64]
   # electron-builder derives .icns from this 1024px source.
-  icon: resources/icon.png
+  icon: resources/icon-mac.png
   # Without this the default-arch (x64) zip is named "-mac.zip" with no arch,
   # while the arm64 one is "-arm64-mac.zip". Name both the same way.
   artifactName: ${productName}-${version}-${arch}-mac.${ext}

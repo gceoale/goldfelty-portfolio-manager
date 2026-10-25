@@ -1,4 +1,12 @@
-## Goldfelty 1.2.0
+## Goldfelty 1.2.1
+
+**A new logo.** Goldfelty has a proper icon now: a serif G with a gold dot, on
+a dark tile. You’ll see it in your Dock, taskbar or app menu, on the lock
+screen, on the wallet bridge page and on goldfelty.com.
+
+If you installed 1.2.0, the app updates itself to this version.
+
+## What arrived in 1.2
 
 **Bitcoin, Solana and Tron.** Connect Bitcoin, Solana and Tron wallets from the
 same browser tab as your Ethereum ones, see their balances, and send and

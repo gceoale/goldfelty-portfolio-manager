@@ -14,6 +14,8 @@
  * browserBridge.ts), so editing either here is all it takes; the hashes are
  * computed from this string at startup.
  */
+import { BRIDGE_MARK } from './bridgeMark.ts'
+
 export const BRIDGE_PAGE = String.raw`<!doctype html>
 <html lang="en">
 <head>
@@ -36,8 +38,7 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
     -webkit-font-smoothing: antialiased; }
   main { max-width: 440px; margin: 56px auto; padding: 0 16px; }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
-  .mark { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: #1d1d1f;
-    display: grid; place-items: center; font-weight: 700; font-size: 15px; }
+  .mark { width: 28px; height: 28px; display: block; flex: none; }
   h1 { font-size: 15px; font-weight: 600; margin: 0; }
   .sub { color: var(--muted); font-size: 12px; }
   .panel { background: var(--panel); border-radius: 10px; border: 1px solid var(--line); overflow: hidden; }
@@ -62,7 +63,7 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
 <body>
 <main>
   <div class="head">
-    <div class="mark">G</div>
+    <img class="mark" src="${BRIDGE_MARK}" alt="" />
     <div>
       <h1>Goldfelty</h1>
       <div class="sub" id="sub">Connecting to the app…</div>
