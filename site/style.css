@@ -141,16 +141,10 @@ img {
 }
 
 .mark {
-  display: inline-grid;
-  place-items: center;
+  display: block;
   width: 24px;
   height: 24px;
-  border-radius: 7px;
-  background: linear-gradient(160deg, #f0c766, var(--accent) 55%, #c18a1e);
-  color: #1d1d1f;
-  font-weight: 700;
-  font-size: 13px;
-  line-height: 1;
+  flex: none;
 }
 
 .top nav {

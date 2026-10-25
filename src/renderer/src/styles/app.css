@@ -1463,22 +1463,15 @@ select.input {
 }
 
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
+  display: block;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-weight: 700;
-  font-size: 12px;
+  flex: none;
 }
 
 .brand-mark.large {
   width: 44px;
   height: 44px;
-  border-radius: 11px;
-  font-size: 22px;
 }
 
 .setup-steps ol {

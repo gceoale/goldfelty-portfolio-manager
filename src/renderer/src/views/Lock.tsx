@@ -1,5 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { useApp } from '../state/app.tsx'
+import mark from '../assets/mark.png'
 import { Button, TextInput } from '../components/ui.tsx'
 
 const api = window.goldfelty
@@ -43,7 +44,7 @@ export function Lock(): JSX.Element {
           if (pw && !waiting) void unlock()
         }}
       >
-        <span className="brand-mark large">G</span>
+        <img className="brand-mark large" src={mark} alt="" />
         <h1>{status?.greetingName ? `Welcome back, ${status.greetingName}` : 'Goldfelty is locked'}</h1>
         <TextInput type="password" placeholder="Password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} aria-label="Password" />
         {waiting ? (

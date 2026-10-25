@@ -4,6 +4,7 @@ import { useApp } from '../state/app.tsx'
 import { ConnectSheet } from '../components/ConnectSheet.tsx'
 import { Button, Field, Notice, TextInput, WalletGlyph } from '../components/ui.tsx'
 import { shortAddress } from '../lib/format.ts'
+import mark from '../assets/mark.png'
 
 const api = window.goldfelty
 const TERMS_URL = 'https://goldfelty.com/terms/'
@@ -36,7 +37,7 @@ export function Onboarding(): JSX.Element {
       <div className="setup-drag" />
       <aside className="setup-steps">
         <div className="setup-brand">
-          <span className="brand-mark">G</span> Goldfelty
+          <img className="brand-mark" src={mark} alt="" /> Goldfelty
         </div>
         <ol>
           {STEPS.map((s, i) => {

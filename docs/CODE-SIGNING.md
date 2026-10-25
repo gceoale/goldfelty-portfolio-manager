@@ -79,7 +79,7 @@ below cover them.
   a download with the [GitHub CLI](https://cli.github.com):
 
   ```sh
-  gh attestation verify "Goldfelty Portfolio Manager-1.2.0-arm64.dmg" \
+  gh attestation verify "Goldfelty Portfolio Manager-1.2.1-arm64.dmg" \
     --repo gceoale/goldfelty-portfolio-manager
   ```
 
