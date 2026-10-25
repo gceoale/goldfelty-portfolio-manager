@@ -628,6 +628,12 @@ function makeWalletBackend() {
   await page.getByText('SOL', { exact: true }).first().waitFor({ timeout: 20_000 })
   await page.getByText('BTC', { exact: true }).first().waitFor({ timeout: 20_000 })
   await shot('13f-overview-multichain')
+  // A clean Overview for goldfelty.com, once the notifications have closed themselves.
+  await page.locator('.toasts .toast').first().waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {})
+  await page.waitForFunction(() => document.querySelectorAll('.toasts .toast').length === 0, null, { timeout: 15_000 })
+  await page.locator('.content').evaluate((el) => el.scrollTo(0, 0))
+  await page.mouse.move(5, 790)
+  await shot('site-overview-light')
 
   step('send SOL: the fee is a second instruction in the same transaction')
   await page.getByRole('button', { name: 'Send', exact: true }).first().click()
@@ -682,6 +688,10 @@ function makeWalletBackend() {
   await page.getByRole('button', { name: 'Overview', exact: true }).click()
   await page.locator('table.holdings').waitFor()
   await shot('14-overview-dark')
+  await page.waitForFunction(() => document.querySelectorAll('.toasts .toast').length === 0, null, { timeout: 15_000 })
+  await page.locator('.content').evaluate((el) => el.scrollTo(0, 0))
+  await page.mouse.move(5, 790)
+  await shot('site-overview-dark')
   await page.getByRole('button', { name: 'Send', exact: true }).first().click()
   await page.locator('#send-asset').waitFor()
   await shot('15-send-dark')
