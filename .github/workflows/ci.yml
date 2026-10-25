@@ -26,7 +26,35 @@ jobs:
       - run: npx electron-vite build
         env:
           MAIN_VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.WALLETCONNECT_PROJECT_ID }}
-          MAIN_VITE_GOLDFELTY_FEE_ADDRESS: ${{ vars.GOLDFELTY_FEE_ADDRESS }}
+          MAIN_VITE_GOLDFELTY_FEE_ADDRESS: ${{ vars.GOLDFELTY_FEE_ADDRESS || secrets.GOLDFELTY_FEE_ADDRESS }}
+          MAIN_VITE_GOLDFELTY_FEE_ADDRESS_BTC: ${{ vars.GOLDFELTY_FEE_ADDRESS_BTC || secrets.GOLDFELTY_FEE_ADDRESS_BTC }}
+          MAIN_VITE_GOLDFELTY_FEE_ADDRESS_SOL: ${{ vars.GOLDFELTY_FEE_ADDRESS_SOL || secrets.GOLDFELTY_FEE_ADDRESS_SOL }}
+          MAIN_VITE_GOLDFELTY_FEE_ADDRESS_TRX: ${{ vars.GOLDFELTY_FEE_ADDRESS_TRX || secrets.GOLDFELTY_FEE_ADDRESS_TRX }}
+
+  secrets:
+    name: Release secrets
+    # Only in this repository: forks and other copies don't have its secrets.
+    if: github.repository == 'gceoale/goldfelty-portfolio-manager'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Prints only shortened addresses and pass/fail; see the script.
+      - run: node scripts/check-release-config.mjs
+        env:
+          GOLDFELTY_FEE_ADDRESS: ${{ vars.GOLDFELTY_FEE_ADDRESS || secrets.GOLDFELTY_FEE_ADDRESS }}
+          GOLDFELTY_FEE_ADDRESS_BTC: ${{ vars.GOLDFELTY_FEE_ADDRESS_BTC || secrets.GOLDFELTY_FEE_ADDRESS_BTC }}
+          GOLDFELTY_FEE_ADDRESS_SOL: ${{ vars.GOLDFELTY_FEE_ADDRESS_SOL || secrets.GOLDFELTY_FEE_ADDRESS_SOL }}
+          GOLDFELTY_FEE_ADDRESS_TRX: ${{ vars.GOLDFELTY_FEE_ADDRESS_TRX || secrets.GOLDFELTY_FEE_ADDRESS_TRX }}
+          GOLDFELTY_ADMIN_TOKEN: ${{ secrets.GOLDFELTY_ADMIN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   api:
     name: API tests

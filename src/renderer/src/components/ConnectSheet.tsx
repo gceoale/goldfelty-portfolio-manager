@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import QRCode from 'qrcode'
-import { FRAME_ID, providerIdFor, type RegistryWallet } from '@shared/walletRegistry.ts'
+import { FRAME_ID, TRACK_ONLY_WALLETS, providerIdFor, type RegistryWallet } from '@shared/walletRegistry.ts'
 import type { BridgeStatus, ConnectStage, DetectedWallet, PendingConnection, Wallet } from '@shared/types.ts'
 import { useApp } from '../state/app.tsx'
-import { Button, Notice, Sheet, Spinner, TextInput, WalletGlyph } from './ui.tsx'
+import { Button, Field, Notice, Sheet, Spinner, TextInput, WalletGlyph } from './ui.tsx'
 import { CheckIcon, CopyIcon, SearchIcon } from './Icons.tsx'
 
 const api = window.goldfelty
@@ -27,6 +27,7 @@ export function ConnectSheet({ onDone }: { onDone?: (wallets: Wallet[]) => void 
   const [busy, setBusy] = useState<Busy>(null)
   const [error, setError] = useState<{ text: string; homepage?: string | null } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [track, setTrack] = useState<{ providerId: string | null; name: string; why: string | null } | null>(null)
 
   const close = (): void => openConnect(false)
 
@@ -61,8 +62,21 @@ export function ConnectSheet({ onDone }: { onDone?: (wallets: Wallet[]) => void 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const detected: DetectedWallet[] = bridge?.detected ?? []
-  const detectedIds = new Set(detected.map((d) => d.providerId))
+  // A wallet that does several chains announces once per chain; list it once.
+  const detected = useMemo(() => {
+    const byId = new Map<string, { d: DetectedWallet; families: Set<string> }>()
+    for (const d of bridge?.detected ?? []) {
+      const entry = byId.get(d.providerId)
+      if (entry) {
+        entry.families.add(d.family)
+        if (!entry.d.icon && d.icon) entry.d = { ...entry.d, icon: d.icon }
+      } else {
+        byId.set(d.providerId, { d, families: new Set([d.family]) })
+      }
+    }
+    return [...byId.values()]
+  }, [bridge])
+  const detectedIds = new Set(detected.map(({ d }) => d.providerId))
   const q = query.trim().toLowerCase()
   const matches = (name: string): boolean => !q || name.toLowerCase().includes(q)
   const browserWallets = useMemo(
@@ -108,6 +122,20 @@ export function ConnectSheet({ onDone }: { onDone?: (wallets: Wallet[]) => void 
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
+  }
+
+  if (track) {
+    return (
+      <TrackForm
+        target={track}
+        onBack={() => setTrack(null)}
+        onDone={(w) => {
+          notify({ tone: 'good', title: `Tracking ${w.label}`, body: 'Its balances now count in your portfolio. Send from it in the wallet itself.' })
+          onDone?.([w])
+          close()
+        }}
+      />
+    )
   }
 
   if (busy?.kind === 'phone') {
@@ -179,26 +207,33 @@ export function ConnectSheet({ onDone }: { onDone?: (wallets: Wallet[]) => void 
 
       <div className="connect-columns">
         <div>
-          <h3 className="list-title">In your browser</h3>
+          <h3 className="list-title">Browser extensions</h3>
           <p className="muted small">
             {bridge?.pages
               ? `${bridge.pages} Goldfelty tab${bridge.pages === 1 ? '' : 's'} open. Wallets found there are listed first.`
               : 'Pick your wallet and Goldfelty opens a tab in your default browser to reach it.'}
           </p>
           <ul className="pick-list">
-            {detected.filter((d) => matches(d.name)).map((d) => (
+            {detected.filter(({ d }) => matches(d.name)).map(({ d, families }) => (
               <PickRow
-                key={d.rdns}
+                key={d.providerId}
                 name={d.name}
                 color="#8e8e93"
                 icon={d.icon}
-                note="Found in your browser"
+                note={`Found in your browser · ${familyNames([...families])}`}
                 disabled={!!busy}
                 onClick={() => void connectBrowser(providerIdFor(d.rdns, d.name), d.name)}
               />
             ))}
             {browserWallets.map((w: RegistryWallet) => (
-              <PickRow key={w.id} name={w.name} color={w.color} disabled={!!busy} onClick={() => void connectBrowser(w.id, w.name, w.homepage)} />
+              <PickRow
+                key={w.id}
+                name={w.name}
+                color={w.color}
+                note={w.families && w.families.some((f) => f !== 'evm') ? familyNames(w.families) : undefined}
+                disabled={!!busy}
+                onClick={() => void connectBrowser(w.id, w.name, w.homepage)}
+              />
             ))}
           </ul>
           <div className="list-foot">
@@ -226,10 +261,102 @@ export function ConnectSheet({ onDone }: { onDone?: (wallets: Wallet[]) => void 
           <ul className="pick-list">
             <PickRow name="Phone wallet" color="#3b99fc" note="Scan a code with any WalletConnect wallet" disabled={!!busy} onClick={() => void connectPhone()} />
           </ul>
+
+          <h3 className="list-title">Can’t connect</h3>
+          <ul className="pick-list">
+            {TRACK_ONLY_WALLETS.filter((w) => matches(w.name)).map((w) => (
+              <PickRow
+                key={w.id}
+                name={w.name}
+                color={w.color}
+                note="Desktop and phone apps: track the balance, send from Exodus"
+                disabled={!!busy}
+                onClick={() => setTrack({ providerId: w.id, name: w.name, why: w.why })}
+              />
+            ))}
+            <PickRow
+              name="Another wallet"
+              color="#8e8e93"
+              note="Track any address, read-only"
+              disabled={!!busy}
+              onClick={() => setTrack({ providerId: null, name: 'Another wallet', why: null })}
+            />
+          </ul>
         </div>
       </div>
     </Sheet>
   )
+}
+
+/** Track an address from a wallet that can't connect. Read-only by design. */
+function TrackForm({
+  target,
+  onBack,
+  onDone
+}: {
+  target: { providerId: string | null; name: string; why: string | null }
+  onBack: () => void
+  onDone: (wallet: Wallet) => void
+}): JSX.Element {
+  const { openConnect } = useApp()
+  const [address, setAddress] = useState('')
+  const [label, setLabel] = useState(target.providerId ? target.name : '')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const app = target.providerId ? target.name : 'the wallet'
+
+  const submit = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    const r = await api.wallets.track({ address, label, providerId: target.providerId })
+    setBusy(false)
+    if (r.ok) onDone(r.data)
+    else setError(r.error)
+  }
+
+  return (
+    <Sheet
+      title={target.providerId ? `Track ${target.name}` : 'Track an address'}
+      onClose={() => openConnect(false)}
+      footer={
+        <>
+          <Button onClick={onBack}>Back</Button>
+          <Button variant="primary" busy={busy} disabled={!address.trim()} onClick={() => void submit()}>
+            Track
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (address.trim()) void submit()
+        }}
+      >
+        {target.why ? <Notice>{target.why}</Notice> : null}
+        <p className="muted">
+          Goldfelty will show this address’s balances in your portfolio. It can’t send from it, and it won’t offer it as a place to receive:
+          do both in {app}.
+        </p>
+        {target.providerId === 'exodus-desktop' ? (
+          <p className="muted small">In Exodus, open Ethereum (or any network you use), choose Receive, and copy the address. One address covers every network Goldfelty tracks.</p>
+        ) : null}
+        <Field label="Address" htmlFor="track-address" error={error}>
+          <TextInput id="track-address" mono autoFocus placeholder="0x…, bc1…, T…, r… or a Solana address" value={address} onChange={(e) => setAddress(e.target.value.trim())} />
+        </Field>
+        <Field label="Name" htmlFor="track-label">
+          <TextInput id="track-label" maxLength={48} value={label} onChange={(e) => setLabel(e.target.value)} />
+        </Field>
+      </form>
+    </Sheet>
+  )
+}
+
+const FAMILY_NAMES: Record<string, string> = { evm: 'Ethereum', utxo: 'Bitcoin', solana: 'Solana', tron: 'Tron', xrp: 'XRP' }
+const FAMILY_ORDER = ['evm', 'utxo', 'solana', 'tron', 'xrp']
+
+function familyNames(families: string[]): string {
+  return [...families].sort((a, b) => FAMILY_ORDER.indexOf(a) - FAMILY_ORDER.indexOf(b)).map((f) => FAMILY_NAMES[f] ?? f).join(', ')
 }
 
 function PickRow({

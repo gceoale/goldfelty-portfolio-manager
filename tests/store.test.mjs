@@ -182,5 +182,6 @@ test('prefs hold no settings that change where the app connects', (t) => {
   const prefs = new Prefs(dir)
   prefs.setTheme('dark')
   const raw = JSON.parse(readFileSync(join(dir, 'prefs.json'), 'utf8'))
-  assert.deepEqual(Object.keys(raw).sort(), ['failedUnlocks', 'greetingName', 'onboarded', 'schemaVersion', 'theme', 'unlockRetryAt', 'upgradeNotice'])
+  // autoUpdate is only on or off; updates always come from GitHub, whatever it says.
+  assert.deepEqual(Object.keys(raw).sort(), ['autoUpdate', 'failedUnlocks', 'greetingName', 'onboarded', 'schemaVersion', 'theme', 'unlockRetryAt', 'upgradeNotice'])
 })

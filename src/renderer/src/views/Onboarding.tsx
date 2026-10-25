@@ -77,7 +77,7 @@ function Welcome({ onNext }: { onNext: () => void }): JSX.Element {
           <button type="button" className="link" onClick={() => void api.app.openExternal(TERMS_URL)}>
             Terms of Service
           </button>
-          , including the fee on tokens sent through Goldfelty, which the owner of goldfelty.com can set between 0% and 10%.
+          , including the fixed 0.5% fee on tokens sent through Goldfelty.
         </span>
       </label>
       <div className="setup-actions">
@@ -184,7 +184,7 @@ function ConnectStep({ onNext }: { onNext: () => void }): JSX.Element {
 function AccountStep({ onDone }: { onDone: () => void }): JSX.Element {
   const { wallets, notify, updateSettings } = useApp()
   const [share, setShare] = useState(false)
-  const signers = wallets.filter((w) => w.kind !== 'readonly' && w.connectionId)
+  const signers = wallets.filter((w) => w.kind !== 'readonly' && (w.family ?? 'evm') === 'evm' && w.connectionId)
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [signer, setSigner] = useState(signers[0]?.id ?? '')

@@ -24,6 +24,8 @@ interface PrefsData {
   upgradeNotice: UpgradeNotice | null
   failedUnlocks: number
   unlockRetryAt: number | null
+  /** Download and install updates without asking first. Readable while locked. */
+  autoUpdate: boolean
 }
 
 interface LegacyState {
@@ -40,7 +42,8 @@ const fresh = (): PrefsData => ({
   onboarded: false,
   upgradeNotice: null,
   failedUnlocks: 0,
-  unlockRetryAt: null
+  unlockRetryAt: null,
+  autoUpdate: true
 })
 
 export class Prefs {
@@ -64,7 +67,8 @@ export class Prefs {
           onboarded: parsed.onboarded === true,
           upgradeNotice: parsed.upgradeNotice ?? null,
           failedUnlocks: Math.max(0, Number(parsed.failedUnlocks) || 0),
-          unlockRetryAt: Number(parsed.unlockRetryAt) || null
+          unlockRetryAt: Number(parsed.unlockRetryAt) || null,
+          autoUpdate: parsed.autoUpdate !== false
         }
       } catch {
         // A damaged prefs file costs a theme and a greeting, nothing more.
@@ -159,6 +163,16 @@ export class Prefs {
     if (this.data.failedUnlocks === 0 && this.data.unlockRetryAt === null) return
     this.data.failedUnlocks = 0
     this.data.unlockRetryAt = null
+    this.persist()
+  }
+
+  get autoUpdate(): boolean {
+    return this.data.autoUpdate
+  }
+
+  setAutoUpdate(on: boolean): void {
+    if (this.data.autoUpdate === on) return
+    this.data.autoUpdate = on
     this.persist()
   }
 

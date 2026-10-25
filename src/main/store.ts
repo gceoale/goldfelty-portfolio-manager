@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { seal, unseal, type SealedBlob } from './crypto.ts'
 import { matchRegistry } from '../shared/walletRegistry.ts'
 import { DEFAULT_SETTINGS, applySettingsPatch, normaliseSettings } from './settings.ts'
+import { sameAddress } from './addresses.ts'
 import type {
   Account,
   Settings,
@@ -121,7 +122,10 @@ export class Store {
         ...empty(),
         ...stored,
         // Re-validated on every open, in case an older build wrote looser values.
-        settings: normaliseSettings(stored.settings)
+        settings: normaliseSettings(stored.settings),
+        // Data from before 1.2 knew only EVM chains.
+        wallets: (stored.wallets ?? []).map((w) => ({ ...w, family: w.family ?? 'evm' })),
+        connections: (stored.connections ?? []).map((c) => ({ ...c, family: c.family ?? 'evm' }))
       }
       return null
     }
@@ -218,9 +222,9 @@ export class Store {
     return this.d.wallets.find((w) => w.id === id)
   }
 
+  /** The wallet holding `address`, compared the way that address's format requires. */
   walletByAddress(address: string): Wallet | undefined {
-    const a = address.toLowerCase()
-    return this.d.wallets.find((w) => w.address.toLowerCase() === a)
+    return this.d.wallets.find((w) => sameAddress(w.family, w.address, address))
   }
 
   addWallet(wallet: Wallet): void {
@@ -349,6 +353,7 @@ export function migrateLegacy(legacy: LegacyState): { data: StoreData; report: M
       id: w.id,
       label: w.label,
       kind,
+      family: 'evm' as const,
       address: w.address,
       // Old connections were never persisted, so every one needs reconnecting.
       connectionId: null,

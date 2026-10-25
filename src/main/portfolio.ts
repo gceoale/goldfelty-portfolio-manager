@@ -4,6 +4,7 @@ import { fetchPrices } from './prices.ts'
 import { rpcBatch } from './rpc.ts'
 import { erc20Interface } from './erc20.ts'
 import { CHAIN_BY_ID, TOKENS, getChain } from '../shared/chains.ts'
+import { readBalances } from './backends/balances.ts'
 import type {
   AssetHolding,
   Balance,
@@ -57,14 +58,14 @@ function decodeBalance(raw: string | null, token: TokenDef): bigint | null {
 export async function loadPortfolio(store: Store, range: HistoryRange = '24h'): Promise<Portfolio> {
   const settings = store.settings
   const wallets = store.activeWallets()
-  const chainIds = settings.enabledChains.filter((id) => CHAIN_BY_ID.has(id))
+  const chainIds = settings.enabledChains.filter((id) => CHAIN_BY_ID.get(id)?.family === 'evm')
 
   const balances: Balance[] = []
   let degraded = wallets.length > 0 && chainIds.length === 0
 
   const perChain = await Promise.all(
     chainIds.map(async (chainId) => {
-      const relevant = wallets.filter((w) => w.chainIds.includes(chainId))
+      const relevant = wallets.filter((w) => (w.family ?? 'evm') === 'evm' && w.chainIds.includes(chainId))
       if (relevant.length === 0) return { chainId, planned: [], results: [], failed: false }
 
       const planned: PlannedCall[] = []
@@ -113,6 +114,50 @@ export async function loadPortfolio(store: Store, range: HistoryRange = '24h'): 
       if (raw === '0') continue
       balances.push({
         walletId,
+        tokenKey: token.key,
+        chainId: token.chainId,
+        symbol: token.symbol,
+        raw,
+        amount: Number(formatUnits(raw, token.decimals)),
+        value: 0,
+        stale
+      })
+    }
+  }
+
+  // Chains that aren't EVM: one request per wallet and chain, through their own APIs.
+  const others = wallets.filter((w) => (w.family ?? 'evm') !== 'evm')
+  const otherReads = await Promise.all(
+    others.flatMap((wallet) =>
+      wallet.chainIds.map(async (chainId) => {
+        const chain = CHAIN_BY_ID.get(chainId)
+        if (!chain || chain.family === 'evm') return null
+        const tokens = tokensForWallet(wallet, chainId)
+        try {
+          return { wallet, tokens, result: await readBalances(chain, wallet.address, tokens, settings) }
+        } catch {
+          return { wallet, tokens, result: null }
+        }
+      })
+    )
+  )
+  for (const read of otherReads) {
+    if (!read) continue
+    if (!read.result) degraded = true
+    for (const token of read.tokens) {
+      const fresh = read.result?.get(token.key)
+      let raw: string
+      let stale = false
+      if (fresh !== undefined) {
+        raw = fresh.toString()
+        store.cacheBalance(read.wallet.id, token.key, raw)
+      } else {
+        raw = store.cachedBalance(read.wallet.id, token.key)?.raw ?? '0'
+        stale = true
+      }
+      if (raw === '0') continue
+      balances.push({
+        walletId: read.wallet.id,
         tokenKey: token.key,
         chainId: token.chainId,
         symbol: token.symbol,

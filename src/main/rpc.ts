@@ -13,10 +13,18 @@ const REQUEST_TIMEOUT_MS = 12_000
 const cooldown = new Map<string, number>()
 const COOLDOWN_MS = 60_000
 
-function endpointsFor(chainId: number, settings: Settings): string[] {
+let customOnly = false
+
+/** For tests only: use just the custom endpoint, so nothing reaches the public networks. */
+export function useOnlyCustomEndpointsForTests(on: boolean): void {
+  customOnly = on
+}
+
+export function endpointsFor(chainId: number, settings: Settings): string[] {
   const chain = getChain(chainId)
   const custom = settings.customRpc?.[chainId]
-  const all = custom ? [custom, ...chain.rpcUrls] : [...chain.rpcUrls]
+  const builtIn = customOnly ? [] : chain.rpcUrls
+  const all = custom ? [custom, ...builtIn] : [...builtIn]
   const now = Date.now()
   const healthy = all.filter((url) => (cooldown.get(url) ?? 0) <= now)
   // If every endpoint is cooling down, try them all anyway rather than failing
@@ -24,11 +32,11 @@ function endpointsFor(chainId: number, settings: Settings): string[] {
   return healthy.length > 0 ? healthy : all
 }
 
-function markFailed(url: string): void {
+export function markFailed(url: string): void {
   cooldown.set(url, Date.now() + COOLDOWN_MS)
 }
 
-function markHealthy(url: string): void {
+export function markHealthy(url: string): void {
   cooldown.delete(url)
 }
 
@@ -127,6 +135,18 @@ export function disposeProviders(): void {
 /** Cheap reachability probe used by Settings → Networks. */
 export async function probeChain(chainId: number, settings: Settings): Promise<{ ok: boolean; blockNumber?: number; latencyMs?: number; error?: string }> {
   const started = Date.now()
+  const chain = getChain(chainId)
+  if (chain.family !== 'evm') {
+    try {
+      // Imported here: the balance readers import this module.
+      const { readHeight } = await import('./backends/balances.ts')
+      const height = await readHeight(chain, settings)
+      if (!Number.isFinite(height)) throw new Error('unexpected answer')
+      return { ok: true, blockNumber: height, latencyMs: Date.now() - started }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
   try {
     const [result] = await rpcBatch(chainId, [{ method: 'eth_blockNumber', params: [] }], settings)
     if (!result) throw new Error('empty response')

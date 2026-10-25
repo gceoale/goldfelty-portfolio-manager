@@ -31,7 +31,7 @@ domain to `goldfelty.com` and tick *Enforce HTTPS* once the certificate issues.
 | A | @ | 185.199.109.153 | DNS only |
 | A | @ | 185.199.110.153 | DNS only |
 | A | @ | 185.199.111.153 | DNS only |
-| CNAME | www | gceoalexyt-ops.github.io | DNS only |
+| CNAME | www | gceoale.github.io | DNS only |
 
 Leave the proxy **off** (grey cloud) until GitHub has issued its certificate.
 Pages validates over plain DNS, and proxying breaks that. Turn it on afterwards
@@ -39,6 +39,27 @@ if you want Cloudflare in front.
 
 `site/CNAME` contains `goldfelty.com` — that's what tells Pages the domain is
 yours. Don't delete it.
+
+### Turning on HTTPS
+
+The site must be served over HTTPS. Over plain HTTP, anyone on the network
+path can change the page, for example swapping the download link, and the
+admin page refuses to take your token.
+
+1. GitHub: Settings → Pages. The custom domain should read `goldfelty.com`
+   with a green "DNS check successful". After moving the repository to another
+   account, enter it again and save.
+2. Tick **Enforce HTTPS**. From then on GitHub redirects every `http://` visit
+   to `https://`.
+
+If *Enforce HTTPS* is greyed out, GitHub hasn't issued the certificate yet:
+
+- Check the four `A` records and the `www` CNAME above match exactly, with
+  the proxy **off** (grey cloud). The `www` CNAME must name the account that
+  owns the repository now (`gceoale.github.io`).
+- If the zone has `CAA` records, one must allow `letsencrypt.org`.
+- Remove the custom domain in Pages, save, add it back and save. That asks
+  GitHub to try again. Issuing can take up to a day.
 
 ## 3. The API
 
@@ -86,6 +107,7 @@ dig +short api.goldfelty.com
 dig +short MX goldfelty.com
 curl -s https://api.goldfelty.com/health
 curl -sI https://goldfelty.com | head -1
+curl -sI http://goldfelty.com | grep -i location   # should send you to https://
 ```
 
 `/health` should return `{"ok":true}`. If DNS looks wrong, give it time before

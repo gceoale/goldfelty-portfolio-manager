@@ -2,7 +2,8 @@ import { useEffect, useState, type JSX } from 'react'
 import type { AccountApiStatus, Settings as SettingsT } from '@shared/types.ts'
 import { formatFeeRate } from '@shared/fees.ts'
 import { useApp } from '../state/app.tsx'
-import { Button, Group, Row, Segmented, StatusDot, TextInput, Toggle, Toolbar, WalletGlyph } from '../components/ui.tsx'
+import { useUpdates } from '../state/updates.ts'
+import { Button, Group, Row, Segmented, Spinner, StatusDot, TextInput, Toggle, Toolbar, WalletGlyph } from '../components/ui.tsx'
 import { shortAddress } from '../lib/format.ts'
 
 const api = window.goldfelty
@@ -45,6 +46,7 @@ export function Settings(): JSX.Element {
         <Networks settings={settings} update={updateSettings} />
         <FeesSection />
         <DataSection />
+        <Updates />
         <About />
       </div>
     </div>
@@ -113,7 +115,7 @@ function AccountSection(): JSX.Element {
   const [signer, setSigner] = useState('')
   const [busy, setBusy] = useState(false)
   const account = status?.account ?? null
-  const signers = wallets.filter((w) => w.kind !== 'readonly' && w.connectionId && !w.archived)
+  const signers = wallets.filter((w) => w.kind !== 'readonly' && (w.family ?? 'evm') === 'evm' && w.connectionId && !w.archived)
 
   useEffect(() => {
     void api.account.apiStatus().then((r) => r.ok && setApiStatus(r.data))
@@ -242,31 +244,35 @@ function Networks({ settings, update }: { settings: SettingsT; update: (p: Parti
   return (
     <Group title="Networks" footer="Custom endpoints must be https://, or http:// on this computer. They’re tried before the built-in ones.">
       {chains.map((c) => {
-        const on = settings.enabledChains.includes(c.id)
+        const evm = c.family === 'evm'
+        // Other chains are always on: their wallets are only ever on that chain.
+        const on = !evm || settings.enabledChains.includes(c.id)
         return (
-          <Row key={c.id} label={c.name} detail={probe[c.id] ?? (c.testnet ? 'Test network' : undefined)}>
+          <Row key={c.id} label={c.name} detail={probe[c.id] ?? (c.testnet ? 'Test network' : !c.canSend ? 'Balances only' : undefined)}>
             {on ? (
               <>
                 <TextInput
                   className="input-small"
-                  placeholder="Custom RPC (optional)"
+                  placeholder={evm ? 'Custom RPC (optional)' : 'Custom API (optional)'}
                   value={rpc[c.id] ?? ''}
                   onChange={(e) => setRpc((r) => ({ ...r, [c.id]: e.target.value }))}
                   onBlur={() => (rpc[c.id] ?? '') !== (settings.customRpc[c.id] ?? '') && void update({ customRpc: { [c.id]: rpc[c.id] ?? '' } })}
-                  aria-label={`${c.name} custom RPC`}
+                  aria-label={`${c.name} custom ${evm ? 'RPC' : 'API'}`}
                 />
                 <Button small onClick={() => void test(c.id)}>
                   Test
                 </Button>
               </>
             ) : null}
-            <Toggle
-              label={c.name}
-              checked={on}
-              onChange={(v) =>
-                void update({ enabledChains: v ? [...settings.enabledChains, c.id] : settings.enabledChains.filter((x) => x !== c.id) })
-              }
-            />
+            {evm ? (
+              <Toggle
+                label={c.name}
+                checked={on}
+                onChange={(v) =>
+                  void update({ enabledChains: v ? [...settings.enabledChains, c.id] : settings.enabledChains.filter((x) => x !== c.id) })
+                }
+              />
+            ) : null}
           </Row>
         )
       })}
@@ -284,13 +290,13 @@ function FeesSection(): JSX.Element {
         label="Goldfelty fee"
         detail={
           fee?.enabled
-            ? `${formatFeeRate(fee.bps)} of each token you send through Goldfelty, on networks where it applies. It is shown before every send and approved in your wallet as its own transaction.`
+            ? `${formatFeeRate(fee.bps)} of each token you send through Goldfelty, on networks where it applies. It is shown before every send and approved in your wallet: inside the same transaction on Bitcoin and Solana, as its own transaction elsewhere.`
             : 'This build charges no fee.'
         }
       >
         <strong>{fee?.enabled ? formatFeeRate(fee.bps) : '0%'}</strong>
       </Row>
-      <Row label="Terms of Service" detail="The owner of goldfelty.com can set the fee anywhere from 0% to 10%.">
+      <Row label="Terms of Service" detail="The fee is a fixed 0.5%, built into the app.">
         <Button small onClick={() => void api.app.openExternal(TERMS_URL)}>
           Read
         </Button>
@@ -336,6 +342,86 @@ function DataSection(): JSX.Element {
           </Button>
         )}
       </Row>
+    </Group>
+  )
+}
+
+/* ---- updates ---------------------------------------------------------------------- */
+
+function Updates(): JSX.Element {
+  const u = useUpdates()
+  const [busy, setBusy] = useState(false)
+  if (!u) return <Group title="Updates">{null}</Group>
+  const act = async (fn: () => Promise<unknown>): Promise<void> => {
+    setBusy(true)
+    await fn()
+    setBusy(false)
+  }
+  const check = (): Promise<void> => act(() => api.updates.check())
+  const pct = u.progress === null ? '' : ` ${Math.round(u.progress * 100)}%`
+
+  let text: string
+  let control: JSX.Element | null = null
+  switch (u.state) {
+    case 'checking':
+      text = 'Checking for updates…'
+      control = <Spinner />
+      break
+    case 'up-to-date':
+      text = 'Goldfelty is up to date.'
+      control = <Button small busy={busy} onClick={() => void check()}>Check now</Button>
+      break
+    case 'available':
+      text = `Version ${u.latest} is available.`
+      control = <Button small variant="primary" busy={busy} onClick={() => void check()}>Download</Button>
+      break
+    case 'downloading':
+      text = `Downloading version ${u.latest}…${pct}`
+      control = <Spinner />
+      break
+    case 'ready':
+      text = u.message ?? `Version ${u.latest} is ready. It installs when you restart or quit.`
+      control = <Button small variant="primary" busy={busy} onClick={() => void act(() => api.updates.install())}>Restart to update</Button>
+      break
+    case 'installing':
+      text = 'Installing…'
+      control = <Spinner />
+      break
+    case 'manual':
+      text = u.message ?? `Version ${u.latest} is available.`
+      control =
+        u.kind === 'dev' ? null : (
+          <Button small onClick={() => u.releaseUrl && void api.app.openExternal(u.releaseUrl)}>
+            Release page
+          </Button>
+        )
+      break
+    case 'error':
+      text = u.message ?? 'Something went wrong.'
+      control = <Button small busy={busy} onClick={() => void check()}>Try again</Button>
+      break
+    default:
+      text = 'Updates are checked a little after launch, then every six hours.'
+      control = <Button small busy={busy} onClick={() => void check()}>Check now</Button>
+  }
+
+  return (
+    <Group
+      title="Updates"
+      footer={
+        u.kind === 'dev'
+          ? undefined
+          : `Installed as: ${u.kindLabel}. Updates come in the same form, and each is checked against the release’s checksums before it installs.`
+      }
+    >
+      <Row label={`Version ${u.current}`} detail={text}>
+        {control}
+      </Row>
+      {u.kind !== 'dev' ? (
+        <Row label="Install updates automatically" detail="Downloads new versions in the background. They install when you restart or quit.">
+          <Toggle label="Install updates automatically" checked={u.autoUpdate} onChange={(on) => void api.updates.setAuto(on)} />
+        </Row>
+      ) : null}
     </Group>
   )
 }

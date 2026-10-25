@@ -1,30 +1,54 @@
-## Goldfelty 1.1.1
+## Goldfelty 1.2.0
 
-A rebuilt app. Goldfelty no longer creates wallets: you connect the ones you
-already use, and they approve everything.
+**Bitcoin, Solana and Tron.** Connect Bitcoin, Solana and Tron wallets from the
+same browser tab as your Ethereum ones, see their balances, and send and
+receive BTC, SOL, TRX and the USDC and USDT that live there.
 
-**New**
+- Bitcoin: UniSat, Xverse, Leather, OKX, Bitget and OneKey, with native and
+  nested SegWit, Taproot and legacy addresses.
+- Solana: any wallet that supports the Solana Wallet Standard, such as Phantom,
+  Solflare, Backpack and MetaMask.
+- Tron: TronLink, OKX and Bitget.
+- A wallet that does several chains, like Phantom or OKX, is connected for all
+  of them at once.
+- **Litecoin, Dogecoin and XRP**: track an address and its balance counts in
+  your portfolio. No wallet for these lets other apps ask it to sign, so you
+  send from the wallet itself.
 
-- Connects to 33 browser wallets through Goldfelty's own local connection,
-  plus Frame on the desktop and any WalletConnect phone wallet.
-- A new interface that looks and behaves like a desktop app, in light and dark.
-- When several wallets hold a token, you choose which one sends it. Goldfelty
-  switches the wallet to the right network first, warns about lookalike
-  addresses, and checks the chain recorded what you approved.
-- Optional goldfelty.com account, proved by a signature from your wallet.
+On these chains Goldfelty builds the transaction, your wallet signs it, and
+Goldfelty checks that what came back is exactly what you reviewed before
+broadcasting it.
 
-**Fees.** Goldfelty now takes a fee on tokens sent through it, currently 0.5%,
-shown before every send and approved in your wallet as its own transaction. See
-the [Terms](https://goldfelty.com/terms/).
+**The fee is now a fixed 0.5%.** It’s built into the app, so no server,
+goldfelty.com included, can raise it, and the app no longer fetches anything to
+decide it. On Bitcoin and Solana it’s part of the same transaction as your
+transfer; elsewhere it’s still a second transaction. Viewing, tracking and
+receiving stay free. See the updated [Terms](https://goldfelty.com/terms/).
 
-**Security.** Everything Goldfelty stores is now encrypted with your password.
-Electron 44, locked-down builds, and a full internal security review:
-[docs/SECURITY-AUDIT.md](https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
+**Checking a download.** Every file now carries a build provenance attestation:
+a signed, public record that it was built by this repository’s release
+workflow from this exact commit.
 
-**Upgrading from 1.0.** Unlock with your existing password. Addresses that 1.0
-created are kept as read-only; don't send anything to them. Your old encrypted
-vault is kept unchanged next to the new one. Wallets you had connected need
-connecting again.
+```bash
+gh attestation verify <file> --repo gceoale/goldfelty-portfolio-manager
+```
+
+**Automatic updates.** From this version on, Goldfelty updates itself the way
+you installed it: the Mac app, the Windows installer or portable app, the
+AppImage, the .deb or .rpm package, or the tar.gz folder. It downloads in the
+background, checks the file against the release’s checksums, and installs when
+you restart or quit. You can switch this off in Settings > Updates. Earlier
+versions don’t have the updater, so this one is a manual download.
+
+**Exodus.** The Exodus desktop and phone apps don’t let other apps connect to
+them, so Goldfelty tracks an Exodus address instead: Connect a wallet > Can’t
+connect > Exodus. “Another wallet” does the same for any address, on any of the
+chains above.
+
+Also: `SHA256SUMS.txt` lists files under the names GitHub serves them as, so
+`shasum -c` checks the macOS and Windows downloads too.
+
+See the [security review](https://github.com/gceoale/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md).
 
 ## Which file do I download?
 
@@ -38,7 +62,7 @@ connecting again.
 | Linux, ARM64 | `…-arm64.AppImage`, `…_arm64.deb` or `…aarch64.rpm` |
 
 `-portable.exe`, `-mac.zip` and `.tar.gz` are the same app without an installer.
-Check a download against `SHA256SUMS.txt`:
+Check a download against `SHA256SUMS.txt`, or with `gh attestation verify` as above:
 
 ```bash
 shasum -a 256 -c SHA256SUMS.txt --ignore-missing

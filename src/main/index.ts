@@ -8,6 +8,7 @@ import { registerIpc, startAutoLock, lockApp, type Runtime } from './ipc.ts'
 import { registerDeepLinks, onDeepLink } from './deepLinks.ts'
 import { ConnectionManager } from './connections/index.ts'
 import { disposeProviders } from './rpc.ts'
+import { Updater, detectThisInstall, updateArch } from './updater.ts'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !app.isPackaged
@@ -187,12 +188,26 @@ void app.whenReady().then(() => {
   const store = new Store(dataDir)
   const vault = new Vault(dataDir)
   const connections = new ConnectionManager(dataDir, (url) => shell.openExternal(url))
+  const updater = new Updater({
+    currentVersion: app.getVersion(),
+    dataDir,
+    install: detectThisInstall(app.isPackaged),
+    arch: updateArch(app.runningUnderARM64Translation),
+    autoUpdate: () => prefs.autoUpdate,
+    setAutoUpdate: (on) => prefs.setAutoUpdate(on),
+    quit: () => app.quit(),
+    onChange: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updates:changed', status)
+    },
+    openPath: (path) => shell.openPath(path)
+  })
 
   runtime = {
     store,
     vault,
     prefs,
     connections,
+    updater,
     window: () => mainWindow,
     rendererUrl,
     lastBalances: [],
@@ -211,6 +226,7 @@ void app.whenReady().then(() => {
   registerIpc(rt)
   buildMenu()
   autoLockTimer = startAutoLock(rt)
+  updater.start()
 
   // Walking away from the computer locks Goldfelty too.
   powerMonitor.on('lock-screen', () => lockApp(rt))
@@ -252,6 +268,9 @@ app.on('before-quit', () => {
   }
   disposeProviders()
 })
+
+// A downloaded update goes in as the app quits, if the user hasn't restarted for it already.
+app.on('will-quit', () => runtime?.updater.installOnQuit())
 
 // A crashed renderer must not leave Goldfelty unlocked behind it.
 app.on('render-process-gone', () => runtime && lockApp(runtime))

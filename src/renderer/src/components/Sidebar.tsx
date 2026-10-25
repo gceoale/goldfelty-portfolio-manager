@@ -3,6 +3,7 @@ import { useApp, type Page } from '../state/app.tsx'
 import { ActivityIcon, LockIcon, OverviewIcon, PlusIcon, ReceiveIcon, SendIcon, SettingsIcon } from './Icons.tsx'
 import { StatusDot, WalletGlyph } from './ui.tsx'
 import { compactMoney } from '../lib/format.ts'
+import { useUpdates } from '../state/updates.ts'
 
 const NAV: Array<{ page: Page; label: string; icon: (p: { size?: number }) => JSX.Element; key: string }> = [
   { page: { name: 'overview' }, label: 'Overview', icon: OverviewIcon, key: '1' },
@@ -16,6 +17,7 @@ export const NAV_PAGES = NAV.map((n) => n.page)
 /** A source list: where you are, then every wallet you've connected. */
 export function Sidebar(): JSX.Element {
   const { page, go, wallets, connections, portfolio, settings, status, openConnect, run } = useApp()
+  const update = useUpdates()
   const currency = settings?.currency ?? 'USD'
   const byWallet = new Map<string, number>()
   for (const b of portfolio?.balances ?? []) byWallet.set(b.walletId, (byWallet.get(b.walletId) ?? 0) + b.value)
@@ -78,6 +80,12 @@ export function Sidebar(): JSX.Element {
       </ul>
 
       <div className="sidebar-foot">
+        {update?.state === 'ready' && !update.message ? (
+          <button type="button" className="update-ready" title={`Install version ${update.latest} and restart`} onClick={() => void window.goldfelty.updates.install()}>
+            <span className="update-dot" aria-hidden="true" />
+            <span>Restart to update</span>
+          </button>
+        ) : null}
         <button type="button" className={page.name === 'settings' ? 'selected' : ''} onClick={() => go({ name: 'settings' })}>
           <SettingsIcon />
           <span>Settings</span>

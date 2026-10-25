@@ -8,17 +8,26 @@ Goldfelty doesn't create wallets and never holds keys. Your wallets approve
 every transfer and signature.
 
 > Not independently audited, and builds aren't signed by Apple or Microsoft
-> yet. See [docs/SECURITY-AUDIT.md](docs/SECURITY-AUDIT.md).
+> yet ([how to set that up](docs/CODE-SIGNING.md)). Every release can be
+> checked against the build that produced it; see
+> [Checking a download](#checking-a-download), and
+> [docs/SECURITY-AUDIT.md](docs/SECURITY-AUDIT.md).
 
 ## Wallets
 
 **Browser extensions**, through Goldfelty's own connection: MetaMask, Rabby,
 Coinbase Wallet, Phantom, Brave Wallet, Trust Wallet, OKX Wallet, Rainbow,
-Zerion, Frame Companion, Taho, Enkrypt, Exodus, Backpack, Bitget Wallet,
+Zerion, Frame Companion, Taho, Enkrypt, Exodus Web3 Wallet, Backpack, Bitget Wallet,
 Uniswap Extension, Core, Talisman, SubWallet, Ronin Wallet, TokenPocket,
 Coin98, SafePal, Ctrl, OneKey, Magic Eden, Wigwam, Fordefi, Zeal, Ambire, Gate
 Wallet, Opera Wallet and Crypto.com Onchain. Any other extension that announces
 itself with EIP-6963 shows up too.
+
+**Bitcoin, Solana and Tron wallets** in the browser: UniSat, Xverse, Leather,
+OKX, Bitget and OneKey for Bitcoin; any wallet that supports the Solana Wallet
+Standard (Phantom, Solflare, Backpack, MetaMask and more) for Solana; TronLink,
+OKX and Bitget for Tron. A wallet that does several chains is connected for all
+of them at once.
 
 **Frame**, the desktop wallet, over its local socket. Ledger, Trezor and
 GridPlus work through it.
@@ -26,8 +35,20 @@ GridPlus work through it.
 **Phone wallets**, over WalletConnect. This is the only connection that uses an
 outside relay, because a phone can't reach your computer directly.
 
-Networks: Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Avalanche,
-plus Sepolia for testing.
+**Wallets that can't connect**, such as the Exodus desktop and phone apps
+(Exodus ended WalletConnect and its dApp browser in 2026): Goldfelty tracks
+their addresses read-only, so the balances count, and you send from the
+wallet itself.
+
+Networks: send and receive on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB
+Chain, Avalanche, Bitcoin, Solana and Tron (plus Sepolia for testing). Track
+balances on Litecoin, Dogecoin and the XRP Ledger as well; no wallet for those
+offers a way for other apps to ask it to sign, so you send from the wallet.
+
+On Bitcoin, Solana and Tron, Goldfelty builds the transaction itself, the
+wallet signs it, and Goldfelty checks that what came back is exactly what was
+asked for (outputs, instructions or decoded contract, and the signer) before
+broadcasting it.
 
 ## How browser wallets connect
 
@@ -67,26 +88,32 @@ and a wallet signature proving it's you) or turn on **Share my portfolio total**
 
 ## Fee
 
-Goldfelty takes a fee on tokens sent through it: 0.5% for now, paid on top of
-the amount sent, as a separate transaction your wallet asks you to approve. The
-owner of goldfelty.com can set it from 0% to 10% by editing
-[`site/fees.json`](site/fees.json); the app clamps whatever it reads to that
-range and never charges more than the rate shown on the review screen.
+Goldfelty takes a fixed 0.5% fee on tokens sent through it, paid on top of the
+amount sent. On Bitcoin and Solana it's part of the same transaction; elsewhere
+it's a second transaction. Either way the wallet asks the user to approve it.
+Viewing, tracking and receiving are free.
 
-The fee goes to the address in the `GOLDFELTY_FEE_ADDRESS` repository variable,
-which is compiled into each build. It's deliberately not read at runtime, so a
-compromised website can't redirect fees. With no address set, builds charge no
-fee.
+The rate is a constant in [`src/shared/fees.ts`](src/shared/fees.ts). Nothing is
+fetched to decide it, so no server can raise it. Changing it takes a new release,
+and the Terms promise that any change is announced there first.
+[`site/fees.json`](site/fees.json) stays at 0.5% only for version 1.1, which read
+its rate from there.
+
+Fee addresses are compiled into each build from repository variables, and never
+read at runtime, so a compromised website can't redirect fees. A chain with no
+address set charges no fee.
 
 ## Setting up the services
 
 | What | Where | Needed for |
 |---|---|---|
-| `GOLDFELTY_FEE_ADDRESS` | Repository variable | The send fee. Your Exodus Ethereum address. |
+| `GOLDFELTY_FEE_ADDRESS` | Repository variable | The send fee on Ethereum-family networks. Your Exodus Ethereum address. |
+| `GOLDFELTY_FEE_ADDRESS_BTC`, `_SOL`, `_TRX` | Repository variables | The send fee on Bitcoin, Solana and Tron. Your Exodus address on each. |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Repository secrets | Deploying api.goldfelty.com, so sign-up works. See [api/README.md](api/README.md). |
-| `GOLDFELTY_ADMIN_TOKEN` | Repository secret | The owner dashboard at goldfelty.com/admin. Any random string of 32+ characters. |
+| `GOLDFELTY_ADMIN_TOKEN` | Repository secret | The owner dashboard at goldfelty.com/admin. At least 16 characters. |
 | `WALLETCONNECT_PROJECT_ID` | Repository variable (optional) | Overrides the project ID that ships with the build. |
-| `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Repository secrets (optional) | Signing and notarising the builds. |
+| `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Repository secrets (optional) | Signing and notarising the Mac builds. See [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md). |
+| `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` (secrets); `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERTIFICATE_PROFILE`, `AZURE_PUBLISHER_NAME` (variables) | Optional | Signing the Windows builds through Azure Trusted Signing. |
 
 ## Working on it
 
@@ -99,10 +126,12 @@ npm run build
 xvfb-run -a npm run e2e   # drives the built app with a fake browser wallet
 ```
 
-`npm run e2e` launches the real app with a fake EIP-6963 wallet in a separate
-Chromium page, the real account API code on a local port, and mock RPC and price
-servers. It walks setup, connecting, sign-up, sending with the fee, every page,
-dark mode and locking, and fails on any console error or CSP violation.
+`npm run e2e` launches the real app with fake wallets in a separate Chromium
+page (an EIP-6963 wallet, a Solana Wallet Standard wallet and a UniSat-style
+Bitcoin wallet), the real account API code on a local port, and mock chain and
+price servers. It walks setup, connecting, sign-up, sending ETH, SOL and BTC
+with the fee, every page, dark mode and locking, and fails on any console error
+or CSP violation.
 Screenshots land in `release/e2e/`.
 
 ## Installing on macOS
@@ -114,7 +143,44 @@ opened"*. After moving the app to Applications:
 xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"
 ```
 
-Each release lists SHA-256 checksums in `SHA256SUMS.txt`.
+## Updates
+
+From 1.2.0, Goldfelty updates itself the way it was installed. It checks
+GitHub a little after launch and then every six hours, downloads the newest
+release's file for this kind of install, and installs it on restart or quit:
+
+| Installed from | Updates by |
+|---|---|
+| `.dmg` or `-mac.zip` | Downloading the new `-mac.zip` and swapping the app in Applications |
+| `-setup.exe` | Running the new installer silently |
+| `-portable.exe` | Replacing the portable `.exe` |
+| `.AppImage` | Replacing the AppImage file |
+| `.deb` / `.rpm` | Installing the new package through the system's password prompt |
+| `.tar.gz` | Swapping in the new folder |
+
+Each file is checked against both GitHub's recorded SHA-256 and
+`SHA256SUMS.txt` before it's installed, and downloads may only come from
+GitHub. Settings > Updates can switch automatic downloads off. Versions before
+1.2.0 have no updater, so they need one manual download.
+
+## Checking a download
+
+Each release lists SHA-256 checksums in `SHA256SUMS.txt`:
+
+```sh
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+```
+
+Each file also carries a build provenance attestation, a signed public record
+that it was built by this repository's release workflow from a specific
+commit. With the [GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify <downloaded file> --repo gceoale/goldfelty-portfolio-manager
+```
+
+A file changed anywhere after the build fails that check. Downloads come from
+GitHub Releases, never from goldfelty.com itself.
 
 ## Building installers
 
@@ -137,7 +203,7 @@ src/renderer/         the UI
 src/shared/           types, chains, tokens, the wallet registry, fee rules
 api/                  accounts for goldfelty.com: Cloudflare Worker + D1
 site/                 goldfelty.com, including /terms, /privacy and /admin
-docs/                 DNS setup and the security audit
+docs/                 DNS setup, code signing and the security audit
 tests/                unit tests; scripts/e2e.cjs for the whole app
 ```
 

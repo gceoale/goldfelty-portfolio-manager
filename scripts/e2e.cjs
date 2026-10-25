@@ -2,15 +2,17 @@
  * End-to-end test of the built app.
  *
  * Runs the real Electron app against:
- *   - a fake browser wallet ("Rabby Wallet", EIP-6963) in a separate Chromium
- *     page, opened from the app's own one-time bridge link and backed by an
- *     ethers key here in Node;
+ *   - fake browser wallets in a separate Chromium page, opened from the app's
+ *     own one-time bridge link and backed by keys here in Node: "Rabby
+ *     Wallet" (EIP-6963), "Solflare" (Solana Wallet Standard) and "UniSat"
+ *     (Bitcoin);
  *   - the real goldfelty.com account API code (api/src/accounts.js) on a
  *     local port, with an in-memory database;
  *   - a mock JSON-RPC node and price feed, so balances are deterministic.
  *
- * It walks setup, connects the wallet, signs up, reads balances, sends ETH
- * (checking the transfer and the 0.5% fee go where they should), visits every
+ * It walks setup, connects the wallet, signs up, reads balances, sends ETH,
+ * SOL and BTC (checking each transfer and its 0.5% fee go where they
+ * should), visits every
  * page, locks and unlocks, and fails on any console error or CSP violation.
  *
  *   npm run build && xvfb-run -a node scripts/e2e.cjs
@@ -23,6 +25,11 @@ const os = require('node:os')
 const http = require('node:http')
 const assert = require('node:assert/strict')
 const { Wallet, getBytes, Transaction } = require('ethers')
+const bitcoin = require('bitcoinjs-lib')
+const ecc = require('@bitcoinerlab/secp256k1')
+const { ECPairFactory } = require('ecpair')
+const { ed25519 } = require('@noble/curves/ed25519')
+bitcoin.initEccLib(ecc)
 
 let pw
 try {
@@ -41,6 +48,39 @@ const ADMIN_TOKEN = 'admin-'.padEnd(48, 'x')
 fs.mkdirSync(OUT, { recursive: true })
 
 const userKey = Wallet.createRandom()
+
+// The same person's Solana and Bitcoin keys, held by the fake Solflare and UniSat.
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+function b58(bytes) {
+  let n = BigInt('0x' + (Buffer.from(bytes).toString('hex') || '0'))
+  let out = ''
+  while (n > 0n) {
+    out = B58[Number(n % 58n)] + out
+    n /= 58n
+  }
+  for (const b of bytes) {
+    if (b !== 0) break
+    out = '1' + out
+  }
+  return out
+}
+const solSecret = ed25519.utils.randomPrivateKey()
+const solPublic = ed25519.getPublicKey(solSecret)
+const SOL_ADDRESS = b58(solPublic)
+const SOL_RECIPIENT = b58(ed25519.getPublicKey(ed25519.utils.randomPrivateKey()))
+const SOL_FEE_ADDRESS = b58(ed25519.getPublicKey(ed25519.utils.randomPrivateKey()))
+const ECPair = ECPairFactory(ecc)
+const btcKey = ECPair.makeRandom()
+const BTC_ADDRESS = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(btcKey.publicKey) }).address
+const someBtc = () => bitcoin.payments.p2wpkh({ pubkey: Buffer.from(ECPair.makeRandom().publicKey) }).address
+const BTC_RECIPIENT = someBtc()
+const BTC_FEE_ADDRESS = someBtc()
+const chainLog = { solSent: [], btcSent: [] }
+function bs58Bytes(text) {
+  let n = 0n
+  for (const c of text) n = n * 58n + BigInt(B58.indexOf(c))
+  return Buffer.from(n.toString(16).padStart(64, '0'), 'hex')
+}
 
 /* ---- mock servers ------------------------------------------------------------ */
 
@@ -166,9 +206,52 @@ async function startMocks() {
           'usd-coin': { usd: 1, usd_24h_change: 0.01 },
           'matic-network': { usd: 0.4, usd_24h_change: -2.1 },
           'polygon-ecosystem-token': { usd: 0.4, usd_24h_change: -2.1 },
-          weth: { usd: 3000, usd_24h_change: 1.8 }
+          weth: { usd: 3000, usd_24h_change: 1.8 },
+          solana: { usd: 150, usd_24h_change: 3.2 },
+          bitcoin: { usd: 60000, usd_24h_change: -0.6 }
         })
       )
+    }
+    const json = (value) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(value))
+    }
+    if (req.url.startsWith('/sol')) {
+      const call = JSON.parse(body)
+      const reply = (result) => json({ jsonrpc: '2.0', id: call.id, result })
+      switch (call.method) {
+        case 'getBalance':
+          return reply({ context: {}, value: call.params[0] === SOL_ADDRESS ? 3_000_000_000 : 1_000_000 })
+        case 'getTokenAccountsByOwner':
+          return reply({ context: {}, value: [] })
+        case 'getAccountInfo':
+          return reply({ context: {}, value: { lamports: 1_000_000 } })
+        case 'getLatestBlockhash':
+          return reply({ context: {}, value: { blockhash: b58(Buffer.alloc(32, 9)), lastValidBlockHeight: 1 } })
+        case 'sendTransaction': {
+          const bytes = Buffer.from(call.params[0], 'base64')
+          chainLog.solSent.push(bytes)
+          return reply(b58(bytes.subarray(1, 65)))
+        }
+        case 'getSignatureStatuses':
+          return reply({ context: {}, value: [{ confirmationStatus: 'confirmed', err: null }] })
+        default:
+          return reply(null)
+      }
+    }
+    if (req.url.startsWith('/btc')) {
+      const url = req.url.slice(4)
+      if (url === '/fee-estimates') return json({ 1: 9, 3: 5, 6: 3 })
+      if (url === `/address/${BTC_ADDRESS}`) return json({ chain_stats: { funded_txo_sum: 5_000_000, spent_txo_sum: 0 }, mempool_stats: { funded_txo_sum: 0, spent_txo_sum: 0 } })
+      if (url === `/address/${BTC_ADDRESS}/utxo`) return json([{ txid: 'ab'.repeat(32), vout: 0, value: 5_000_000, status: { confirmed: true } }])
+      if (url === '/tx' && req.method === 'POST') {
+        const tx = bitcoin.Transaction.fromHex(body)
+        chainLog.btcSent.push(tx)
+        res.writeHead(200, { 'content-type': 'text/plain' })
+        return res.end(tx.getId())
+      }
+      if (/^\/tx\/[0-9a-f]{64}\/status$/.test(url)) return json({ confirmed: true })
+      if (url.startsWith('/address/')) return json({ chain_stats: { funded_txo_sum: 0, spent_txo_sum: 0 } })
     }
     const rpc = /^\/rpc\/(\d+)/.exec(req.url)
     if (rpc) {
@@ -210,11 +293,58 @@ const FAKE_WALLET = `
   const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) }));
   window.addEventListener('eip6963:requestProvider', announce);
   announce();
+
+  const ask = (method, params) => window.__walletRequest(method, JSON.stringify(params)).then((raw) => {
+    const out = JSON.parse(raw);
+    if (out.error) { const e = new Error(out.error.message); e.code = out.error.code; throw e; }
+    return out.result;
+  });
+
+  // Solflare, through the Solana Wallet Standard.
+  const solAccount = Object.freeze({ address: SOL_ADDRESS, publicKey: new Uint8Array(SOL_PUBLIC), chains: ['solana:mainnet'], features: ['solana:signTransaction'] });
+  const solWallet = {
+    version: '1.0.0',
+    name: 'Solflare',
+    icon: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="7" fill="#fc7227"/></svg>'),
+    chains: ['solana:mainnet'],
+    accounts: [],
+    features: {
+      'standard:connect': { version: '1.0.0', connect: async () => { await ask('sol_connect', []); solWallet.accounts = [solAccount]; return { accounts: [solAccount] }; } },
+      'standard:events': { version: '1.0.0', on: () => () => {} },
+      'solana:signTransaction': {
+        version: '1.0.0',
+        supportedTransactionVersions: ['legacy'],
+        signTransaction: async (...inputs) => {
+          const out = [];
+          for (const input of inputs) {
+            const b64 = btoa(String.fromCharCode(...input.transaction));
+            const signed = await ask('sol_sign', [b64]);
+            out.push({ signedTransaction: Uint8Array.from(atob(signed), (c) => c.charCodeAt(0)) });
+          }
+          return out;
+        }
+      }
+    }
+  };
+  const registerSol = ({ register }) => register(solWallet);
+  window.addEventListener('wallet-standard:app-ready', (e) => registerSol(e.detail));
+  window.dispatchEvent(new CustomEvent('wallet-standard:register-wallet', { detail: registerSol }));
+
+  // UniSat, for Bitcoin.
+  window.unisat = {
+    requestAccounts: () => ask('btc_connect', []).then(() => [BTC_ADDRESS]),
+    getPublicKey: async () => BTC_PUBLIC,
+    signPsbt: (hex, options) => ask('btc_sign', [hex, options])
+  };
 })();
 `
+  .replace(/SOL_ADDRESS/g, JSON.stringify(SOL_ADDRESS))
+  .replace('SOL_PUBLIC', JSON.stringify([...solPublic]))
+  .replace(/BTC_ADDRESS/g, JSON.stringify(BTC_ADDRESS))
+  .replace('BTC_PUBLIC', JSON.stringify(Buffer.from(btcKey.publicKey).toString('hex')))
 
 function makeWalletBackend() {
-  const state = { chainId: 1, sent: [], signed: [], prompts: [] }
+  const state = { chainId: 1, sent: [], signed: [], prompts: [], solSigned: [], btcSigned: [] }
   const handler = async (method, paramsJson) => {
     const params = JSON.parse(paramsJson)
     state.prompts.push(method)
@@ -232,6 +362,23 @@ function makeWalletBackend() {
           const signature = await userKey.signMessage(getBytes(params[0]))
           state.signed.push(Buffer.from(getBytes(params[0])).toString('utf8'))
           return JSON.stringify({ result: signature })
+        }
+        case 'sol_connect':
+        case 'btc_connect':
+          return JSON.stringify({ result: true })
+        case 'sol_sign': {
+          const bytes = Buffer.from(params[0], 'base64')
+          const message = bytes.subarray(65)
+          const signature = ed25519.sign(message, solSecret)
+          state.solSigned.push(message)
+          return JSON.stringify({ result: Buffer.concat([Buffer.from([1]), Buffer.from(signature), message]).toString('base64') })
+        }
+        case 'btc_sign': {
+          const psbt = bitcoin.Psbt.fromHex(params[0])
+          assert.equal(params[1].autoFinalized, false)
+          psbt.signAllInputs(btcKey)
+          state.btcSigned.push(psbt.txOutputs.map((o) => [o.address, o.value]))
+          return JSON.stringify({ result: psbt.toHex() })
         }
         case 'eth_sendTransaction': {
           state.sent.push({ ...params[0], walletChain: state.chainId })
@@ -264,7 +411,8 @@ function makeWalletBackend() {
       ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
       GOLDFELTY_API_URL: `${mocks.origin}/v1`,
       GOLDFELTY_FEE_ADDRESS: FEE_ADDRESS,
-      GOLDFELTY_FEE_CONFIG_URL: `${mocks.origin}/fees.json`
+      GOLDFELTY_FEE_ADDRESS_SOL: SOL_FEE_ADDRESS,
+      GOLDFELTY_FEE_ADDRESS_BTC: BTC_FEE_ADDRESS
     }
   })
   const page = await app.firstWindow()
@@ -304,7 +452,10 @@ function makeWalletBackend() {
   const rpcFor = (id) => `${mocks.origin}/rpc/${id}`
   const updated = await page.evaluate(
     (patch) => window.goldfelty.settings.update(patch),
-    { customRpc: { 1: rpcFor(1), 8453: rpcFor(8453), 42161: rpcFor(42161), 10: rpcFor(10), 137: rpcFor(137) }, priceProviderUrl: mocks.origin }
+    {
+      customRpc: { 1: rpcFor(1), 8453: rpcFor(8453), 42161: rpcFor(42161), 10: rpcFor(10), 137: rpcFor(137), [-501]: `${mocks.origin}/sol`, [-1]: `${mocks.origin}/btc` },
+      priceProviderUrl: mocks.origin
+    }
   )
   assert.equal(updated.ok, true, JSON.stringify(updated))
 
@@ -346,7 +497,9 @@ function makeWalletBackend() {
 
   step('connect it')
   await page.getByRole('button', { name: /Connect a wallet/ }).click()
-  await page.getByText('Found in your browser').waitFor({ timeout: 10_000 })
+  await page.getByText(/Found in your browser/).first().waitFor({ timeout: 10_000 })
+  await page.getByRole('button', { name: /Solflare\s*Found in your browser · Solana/ }).waitFor({ timeout: 10_000 })
+  await page.getByRole('button', { name: /UniSat\s*Found in your browser · Bitcoin/ }).waitFor({ timeout: 10_000 })
   await shot('04-connect-sheet')
   await page.getByRole('button', { name: /Rabby Wallet\s*Found in your browser/ }).click()
   await page.getByText(/Rabby Wallet connected/).waitFor({ timeout: 15_000 })
@@ -447,11 +600,98 @@ function makeWalletBackend() {
   await page.locator('.content').evaluate((el) => el.scrollTo(0, el.scrollHeight))
   await shot('13c-settings-end')
 
+  step('track an Exodus wallet, which can’t connect')
+  const exodusAddress = Wallet.createRandom().address
+  await page.locator('.source-heading').getByRole('button', { name: 'Connect a wallet' }).click()
+  await page.getByText('Can’t connect').waitFor()
+  await page.getByRole('button', { name: /^Exodus\s*Desktop and phone apps/ }).click()
+  await page.locator('#track-address').fill(exodusAddress.toLowerCase())
+  await shot('13d-track-exodus')
+  await page.getByRole('button', { name: 'Track', exact: true }).click()
+  await page.locator('.sidebar .wallets').getByText('Exodus').waitFor({ timeout: 10_000 })
+  await page.locator('.sidebar .wallets button', { hasText: 'Exodus' }).click()
+  await page.getByText(/send and receive with Exodus/).waitFor()
+  await shot('13e-exodus-wallet')
+  assert.ok((await page.locator('.wallet-head .mono').textContent()).includes(exodusAddress), 'stored checksummed')
+
+  step('connect Solflare (Solana) and UniSat (Bitcoin) from the same browser tab')
+  for (const [name, family] of [
+    ['Solflare', 'Solana'],
+    ['UniSat', 'Bitcoin']
+  ]) {
+    await page.locator('.source-heading').getByRole('button', { name: 'Connect a wallet' }).click()
+    await page.getByRole('button', { name: new RegExp(`${name}\\s*Found in your browser · ${family}`) }).click()
+    await page.getByText(new RegExp(`${name} connected`)).waitFor({ timeout: 15_000 })
+  }
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await page.getByText('SOL', { exact: true }).first().waitFor({ timeout: 20_000 })
+  await page.getByText('BTC', { exact: true }).first().waitFor({ timeout: 20_000 })
+  await shot('13f-overview-multichain')
+  // A clean Overview for goldfelty.com, once the notifications have closed themselves.
+  await page.locator('.toasts .toast').first().waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {})
+  await page.waitForFunction(() => document.querySelectorAll('.toasts .toast').length === 0, null, { timeout: 15_000 })
+  await page.locator('.content').evaluate((el) => el.scrollTo(0, 0))
+  await page.mouse.move(5, 790)
+  await shot('site-overview-light')
+
+  step('send SOL: the fee is a second instruction in the same transaction')
+  await page.getByRole('button', { name: 'Send', exact: true }).first().click()
+  await page.locator('#send-asset').selectOption('SOL')
+  await page.locator('.route', { hasText: 'on Solana' }).click()
+  await page.locator('#send-to').fill(SOL_RECIPIENT)
+  await page.locator('#send-amount').fill('1.5')
+  await page.getByRole('button', { name: 'Review' }).click()
+  await page.getByText('Goldfelty fee (0.5%)').waitFor({ timeout: 15_000 })
+  await page.getByText(/one transaction to approve/).waitFor()
+  await shot('13g-send-sol-review')
+  await page.getByRole('button', { name: /Send with Solflare/ }).click()
+  await page.getByRole('heading', { name: 'Sent' }).waitFor({ timeout: 20_000 })
+  assert.equal(backend.state.solSigned.length, 1, 'one signature for transfer and fee together')
+  assert.equal(chainLog.solSent.length, 1)
+  {
+    // The two System Program transfers inside, by data: [2,0,0,0] then the lamports.
+    const message = backend.state.solSigned[0]
+    const hex = Buffer.from(message).toString('hex')
+    const lamports = (n) => '02000000' + Buffer.from(new BigUint64Array([n]).buffer).toString('hex')
+    assert.ok(hex.includes(lamports(1_500_000_000n)), 'the recipient gets 1.5 SOL')
+    assert.ok(hex.includes(lamports(7_500_000n)), 'the fee is 0.5% of 1.5 SOL')
+    assert.ok(hex.includes(Buffer.from(bs58Bytes(SOL_FEE_ADDRESS)).toString('hex')), 'paid to the Solana fee address')
+  }
+  await page.getByRole('button', { name: 'Done' }).click()
+
+  step('send BTC: the fee is an output of the same transaction')
+  await page.locator('#send-asset').selectOption('BTC')
+  await page.locator('.route', { hasText: 'on Bitcoin' }).click()
+  await page.locator('#send-to').fill(BTC_RECIPIENT)
+  await page.locator('#send-amount').fill('0.02')
+  await page.getByRole('button', { name: 'Review' }).click()
+  await page.getByText('Goldfelty fee (0.5%)').waitFor({ timeout: 15_000 })
+  await shot('13h-send-btc-review')
+  await page.getByRole('button', { name: /Send with UniSat/ }).click()
+  await page.getByRole('heading', { name: 'Sent' }).waitFor({ timeout: 20_000 })
+  await shot('13i-sent-btc')
+  assert.equal(chainLog.btcSent.length, 1)
+  {
+    const outs = chainLog.btcSent[0].outs.map((o) => [bitcoin.address.fromOutputScript(o.script), o.value])
+    assert.deepEqual(outs[0], [BTC_RECIPIENT, 2_000_000])
+    assert.deepEqual(outs[1], [BTC_FEE_ADDRESS, 10_000], '0.5% of 0.02 BTC')
+    assert.equal(outs[2][0], BTC_ADDRESS, 'change comes back')
+  }
+  await page.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('button', { name: 'Activity', exact: true }).click()
+  await page.getByText('Sent BTC').first().waitFor()
+  await shot('13j-activity-multichain')
+
   step('dark appearance')
   await page.evaluate(() => window.goldfelty.settings.update({ theme: 'dark' }))
   await page.getByRole('button', { name: 'Overview', exact: true }).click()
   await page.locator('table.holdings').waitFor()
   await shot('14-overview-dark')
+  await page.waitForFunction(() => document.querySelectorAll('.toasts .toast').length === 0, null, { timeout: 15_000 })
+  await page.locator('.content').evaluate((el) => el.scrollTo(0, 0))
+  await page.mouse.move(5, 790)
+  await shot('site-overview-dark')
   await page.getByRole('button', { name: 'Send', exact: true }).first().click()
   await page.locator('#send-asset').waitFor()
   await shot('15-send-dark')
@@ -468,7 +708,7 @@ function makeWalletBackend() {
   await page.getByRole('heading', { name: 'Overview' }).waitFor({ timeout: 20_000 })
 
   await page.getByRole('button', { name: 'Connect a wallet' }).first().click()
-  await page.getByText('Found in your browser').waitFor({ timeout: 10_000 })
+  await page.getByText(/Found in your browser/).first().waitFor({ timeout: 10_000 })
   await shot('17-connect-dark')
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.goldfelty.settings.update({ theme: 'light' }))

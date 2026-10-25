@@ -115,5 +115,5 @@ rpm:
 
 publish:
   provider: github
-  owner: gceoalexyt-ops
+  owner: gceoale
   repo: goldfelty-portfolio-manager

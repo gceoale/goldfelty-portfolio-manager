@@ -3,7 +3,7 @@
 (function () {
   'use strict'
   var API = 'https://api.goldfelty.com/v1/admin/stats'
-  var REPO = 'gceoalexyt-ops/goldfelty-portfolio-manager'
+  var REPO = 'gceoale/goldfelty-portfolio-manager'
   var KEY = 'goldfelty-admin-token'
   var $ = function (id) { return document.getElementById(id) }
 
@@ -97,11 +97,19 @@
       .catch(function () {})
   }
 
+  // Over plain HTTP anyone on the network path could read the token or change
+  // this page, so it is only ever typed in over HTTPS.
+  var secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  if (!secure) {
+    $('token').disabled = true
+    $('status').textContent = 'This page isn’t on HTTPS, so it won’t take your token. Open https://' + location.host + '/admin/ instead. If that doesn’t load, turn on “Enforce HTTPS” in the repository’s Pages settings.'
+  }
+
   $('signin').addEventListener('submit', function (e) {
     e.preventDefault()
     var token = $('token').value.trim()
     $('token').value = ''
-    if (token) load(token)
+    if (token && secure) load(token)
   })
   $('forget').addEventListener('click', function () {
     store('')
@@ -112,6 +120,6 @@
   })
 
   downloads()
-  var existing = stored()
+  var existing = secure ? stored() : ''
   if (existing) load(existing)
 })()

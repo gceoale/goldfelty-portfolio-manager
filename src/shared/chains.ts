@@ -1,11 +1,9 @@
-import type { Chain, TokenDef } from './types.ts'
+import type { Chain, ChainFamily, TokenDef } from './types.ts'
 
-/**
- * Networks a Goldfelty smart account can be connected on. The account address is
- * identical on every one of them because the factory is deployed at the same
- * address via CREATE2 and the salt is derived from the owner key.
- */
-export const CHAINS: Chain[] = [
+type EvmSeed = Omit<Chain, 'family' | 'explorerTx' | 'canSend'>
+
+/** EVM networks. One address works on all of them. */
+const EVM_SEEDS: EvmSeed[] = [
   {
     id: 1,
     key: 'ethereum',
@@ -112,7 +110,121 @@ export const CHAINS: Chain[] = [
   }
 ]
 
+/**
+ * Chains that aren't EVM. Their ids are negative so they can never collide
+ * with an EIP-155 chain id. `rpcUrls` are the APIs balances are read from:
+ * Esplora for Bitcoin and Litecoin, Blockchair for Dogecoin, Solana and
+ * XRPL JSON-RPC, and TronGrid. Each can be replaced in Settings.
+ */
+const OTHER_CHAINS: Chain[] = [
+  {
+    id: -1,
+    key: 'bitcoin',
+    name: 'Bitcoin',
+    shortName: 'BTC',
+    family: 'utxo',
+    nativeSymbol: 'BTC',
+    nativeName: 'Bitcoin',
+    decimals: 8,
+    rpcUrls: ['https://mempool.space/api', 'https://blockstream.info/api'],
+    explorer: 'https://mempool.space',
+    explorerTx: 'https://mempool.space/tx/{hash}',
+    color: '#f7931a',
+    testnet: false,
+    canSend: true
+  },
+  {
+    id: -2,
+    key: 'litecoin',
+    name: 'Litecoin',
+    shortName: 'LTC',
+    family: 'utxo',
+    nativeSymbol: 'LTC',
+    nativeName: 'Litecoin',
+    decimals: 8,
+    rpcUrls: ['https://litecoinspace.org/api'],
+    explorer: 'https://litecoinspace.org',
+    explorerTx: 'https://litecoinspace.org/tx/{hash}',
+    color: '#345d9d',
+    testnet: false,
+    canSend: false
+  },
+  {
+    id: -3,
+    key: 'dogecoin',
+    name: 'Dogecoin',
+    shortName: 'DOGE',
+    family: 'utxo',
+    nativeSymbol: 'DOGE',
+    nativeName: 'Dogecoin',
+    decimals: 8,
+    rpcUrls: ['https://api.blockchair.com/dogecoin'],
+    explorer: 'https://blockchair.com/dogecoin',
+    explorerTx: 'https://blockchair.com/dogecoin/transaction/{hash}',
+    color: '#c2a633',
+    testnet: false,
+    canSend: false
+  },
+  {
+    id: -501,
+    key: 'solana',
+    name: 'Solana',
+    shortName: 'SOL',
+    family: 'solana',
+    nativeSymbol: 'SOL',
+    nativeName: 'Solana',
+    decimals: 9,
+    rpcUrls: ['https://api.mainnet-beta.solana.com', 'https://solana-rpc.publicnode.com'],
+    explorer: 'https://solscan.io',
+    explorerTx: 'https://solscan.io/tx/{hash}',
+    color: '#9945ff',
+    testnet: false,
+    canSend: true
+  },
+  {
+    id: -195,
+    key: 'tron',
+    name: 'Tron',
+    shortName: 'TRX',
+    family: 'tron',
+    nativeSymbol: 'TRX',
+    nativeName: 'Tron',
+    decimals: 6,
+    rpcUrls: ['https://api.trongrid.io'],
+    explorer: 'https://tronscan.org',
+    explorerTx: 'https://tronscan.org/#/transaction/{hash}',
+    color: '#eb0029',
+    testnet: false,
+    canSend: true
+  },
+  {
+    id: -144,
+    key: 'xrp',
+    name: 'XRP Ledger',
+    shortName: 'XRP',
+    family: 'xrp',
+    nativeSymbol: 'XRP',
+    nativeName: 'XRP',
+    decimals: 6,
+    rpcUrls: ['https://xrplcluster.com', 'https://s1.ripple.com:51234'],
+    explorer: 'https://livenet.xrpl.org',
+    explorerTx: 'https://livenet.xrpl.org/transactions/{hash}',
+    color: '#23292f',
+    testnet: false,
+    canSend: false
+  }
+]
+
+export const CHAINS: Chain[] = [
+  ...EVM_SEEDS.map<Chain>((c) => ({ ...c, family: 'evm', explorerTx: `${c.explorer}/tx/{hash}`, canSend: true })),
+  ...OTHER_CHAINS
+]
+
+/** EVM networks turned on for a new install. Other chains are always on: they cost nothing until a wallet uses them. */
 export const DEFAULT_CHAIN_IDS = [1, 8453, 42161, 10, 137]
+
+/** Ids of the chains that aren't EVM, by name. */
+export const CHAIN_IDS = { bitcoin: -1, litecoin: -2, dogecoin: -3, solana: -501, tron: -195, xrp: -144 } as const
 
 export const CHAIN_BY_ID = new Map(CHAINS.map((c) => [c.id, c]))
 
@@ -122,9 +234,35 @@ export function getChain(id: number): Chain {
   return chain
 }
 
-export function tokenKey(chainId: number, address: string | null): string {
-  return `${chainId}:${address ? address.toLowerCase() : 'native'}`
+export function isEvm(chain: Chain): boolean {
+  return chain.family === 'evm'
 }
+
+export function chainsOfFamily(family: ChainFamily): Chain[] {
+  return CHAINS.filter((c) => c.family === family)
+}
+
+/**
+ * The chains a wallet of `family` is scanned on: the enabled networks for EVM
+ * wallets, and every chain of the family otherwise.
+ */
+export function chainIdsForFamily(family: ChainFamily, enabledChains: number[]): number[] {
+  if (family !== 'evm') return chainsOfFamily(family).map((c) => c.id)
+  const enabled = enabledChains.filter((id) => CHAIN_BY_ID.get(id)?.family === 'evm')
+  return enabled.length ? enabled : [...DEFAULT_CHAIN_IDS]
+}
+
+export function txUrl(chain: Chain, hash: string): string {
+  return chain.explorerTx.replace('{hash}', encodeURIComponent(hash))
+}
+
+/** Token keys lowercase EVM addresses only; base58 addresses are case-sensitive. */
+export function tokenKey(chainId: number, address: string | null): string {
+  if (!address) return `${chainId}:native`
+  return `${chainId}:${address.startsWith('0x') ? address.toLowerCase() : address}`
+}
+
+
 
 interface Erc20Seed {
   chainId: number
@@ -171,14 +309,27 @@ const ERC20_SEEDS: Erc20Seed[] = [
   { chainId: 43114, address: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', symbol: 'USDT', name: 'Tether USD', decimals: 6, priceId: 'tether', color: '#26a17b' }
 ]
 
+/** Tokens on chains that aren't EVM: SPL tokens on Solana, TRC-20 on Tron. */
+const OTHER_TOKEN_SEEDS: Erc20Seed[] = [
+  { chainId: -501, address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', symbol: 'USDC', name: 'USD Coin', decimals: 6, priceId: 'usd-coin', color: '#2775ca' },
+  { chainId: -501, address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', symbol: 'USDT', name: 'Tether USD', decimals: 6, priceId: 'tether', color: '#26a17b' },
+  { chainId: -195, address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', symbol: 'USDT', name: 'Tether USD', decimals: 6, priceId: 'tether', color: '#26a17b' }
+]
+
 const NATIVE_PRICE_IDS: Record<string, string> = {
   ETH: 'ethereum',
   POL: 'matic-network',
   BNB: 'binancecoin',
-  AVAX: 'avalanche-2'
+  AVAX: 'avalanche-2',
+  BTC: 'bitcoin',
+  LTC: 'litecoin',
+  DOGE: 'dogecoin',
+  SOL: 'solana',
+  TRX: 'tron',
+  XRP: 'ripple'
 }
 
-/** Every token the app knows about: chain natives first, then the ERC-20 list. */
+/** Every token the app knows about: chain natives first, then ERC-20, SPL and TRC-20 tokens. */
 export const TOKENS: TokenDef[] = [
   ...CHAINS.map<TokenDef>((chain) => ({
     key: tokenKey(chain.id, null),
@@ -190,7 +341,7 @@ export const TOKENS: TokenDef[] = [
     priceId: chain.testnet ? null : (NATIVE_PRICE_IDS[chain.nativeSymbol] ?? null),
     color: chain.color
   })),
-  ...ERC20_SEEDS.map<TokenDef>((t) => ({
+  ...[...ERC20_SEEDS, ...OTHER_TOKEN_SEEDS].map<TokenDef>((t) => ({
     key: tokenKey(t.chainId, t.address),
     chainId: t.chainId,
     address: t.address,

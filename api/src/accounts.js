@@ -30,7 +30,8 @@ export const LIMITS = {
   register: { max: 10, windowMs: 60 * 60_000 },
   check: { max: 120, windowMs: 60_000 },
   report: { max: 30, windowMs: 60 * 60_000 },
-  admin: { max: 60, windowMs: 60_000 }
+  // The owner loads the dashboard now and then; anything faster is guessing.
+  admin: { max: 10, windowMs: 15 * 60_000 }
 }
 
 /** Currencies the app reports totals in. */
@@ -101,7 +102,8 @@ function sameString(a, b) {
 
 function bearer(request) {
   const header = request.headers.get('authorization') ?? ''
-  const match = /^Bearer ([A-Za-z0-9_-]{32,128})$/.exec(header)
+  // Any printable characters, so an admin token can be a passphrase with symbols.
+  const match = /^Bearer ([\x21-\x7e]{16,256})$/.exec(header)
   return match ? match[1] : null
 }
 
@@ -221,9 +223,12 @@ export async function withdraw(db, request) {
   return new Response(null, { status: 204, headers: SECURITY_HEADERS })
 }
 
+/** The shortest admin token accepted. Guessing is held back by the admin rate limit. */
+export const MIN_ADMIN_TOKEN = 16
+
 /** For the owner's dashboard. Needs the ADMIN_TOKEN secret, which only the owner holds. */
 export async function adminStats(db, request, adminToken) {
-  if (typeof adminToken !== 'string' || adminToken.length < 32) return json(503, { message: 'Admin access is not set up.' })
+  if (typeof adminToken !== 'string' || adminToken.length < MIN_ADMIN_TOKEN) return json(503, { message: 'Admin access is not set up.' })
   const supplied = bearer(request)
   if (!supplied || !sameString(await sha256hex(supplied), await sha256hex(adminToken))) {
     return json(401, { message: 'Wrong admin token.' })

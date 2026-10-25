@@ -21,7 +21,7 @@ It needs these repository secrets (Settings > Secrets and variables > Actions):
 |---|---|
 | `CLOUDFLARE_ACCOUNT_ID` | On the Cloudflare dashboard, in the right-hand column of any zone's Overview, or under Workers & Pages. |
 | `CLOUDFLARE_API_TOKEN` | A token from My Profile > API Tokens. Start from the **Edit Cloudflare Workers** template, then add **Account > D1 > Edit** and **Zone > DNS > Edit**, and limit Zone Resources to goldfelty.com. |
-| `GOLDFELTY_ADMIN_TOKEN` | Any random string of 32 or more characters, for the owner dashboard. Optional; without it the dashboard stays off. |
+| `GOLDFELTY_ADMIN_TOKEN` | At least 16 characters, for the owner dashboard. Wrong guesses are limited to 10 every 15 minutes. Optional; without it the dashboard stays off. |
 
 The goldfelty.com zone must be on Cloudflare, and there must be **no existing
 DNS record named `api`**: Cloudflare creates it when the Worker claims the

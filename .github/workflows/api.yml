@@ -95,8 +95,8 @@ jobs:
         run: |
           if [ -z "$ADMIN_TOKEN" ]; then
             echo "No GOLDFELTY_ADMIN_TOKEN secret: the owner dashboard stays off." | tee -a "$GITHUB_STEP_SUMMARY"
-          elif [ "${#ADMIN_TOKEN}" -lt 32 ]; then
-            echo "GOLDFELTY_ADMIN_TOKEN must be at least 32 characters." >&2
+          elif [ "${#ADMIN_TOKEN}" -lt 16 ]; then
+            echo "GOLDFELTY_ADMIN_TOKEN must be at least 16 characters." >&2
             exit 1
           else
             printf '%s' "$ADMIN_TOKEN" | npx wrangler secret put ADMIN_TOKEN

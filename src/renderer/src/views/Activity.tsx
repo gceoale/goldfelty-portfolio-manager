@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import type { TransferRecord } from '@shared/types.ts'
+import { txUrl } from '@shared/chains.ts'
 import { useApp } from '../state/app.tsx'
 import { Empty, Toolbar } from '../components/ui.tsx'
 import { ExternalIcon, WarningIcon } from '../components/Icons.tsx'
@@ -70,7 +71,7 @@ export function ActivityTable({ rows, compact = false }: { rows: TransferRecord[
                     className="icon-btn"
                     aria-label="Open in block explorer"
                     title="Open in block explorer"
-                    onClick={() => void window.goldfelty.app.openExternal(`${chain.explorer}/tx/${t.hash}`)}
+                    onClick={() => void window.goldfelty.app.openExternal(txUrl(chain, t.hash))}
                   >
                     <ExternalIcon size={13} />
                   </button>
