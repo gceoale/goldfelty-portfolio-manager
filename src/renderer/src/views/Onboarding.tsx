@@ -77,7 +77,7 @@ function Welcome({ onNext }: { onNext: () => void }): JSX.Element {
           <button type="button" className="link" onClick={() => void api.app.openExternal(TERMS_URL)}>
             Terms of Service
           </button>
-          , including the fee on tokens sent through Goldfelty, which the owner of goldfelty.com can set between 0% and 10%.
+          , including the fixed 0.5% fee on tokens sent through Goldfelty.
         </span>
       </label>
       <div className="setup-actions">

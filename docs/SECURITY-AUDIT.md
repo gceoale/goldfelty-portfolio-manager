@@ -1,10 +1,14 @@
-# Security audit: Goldfelty 1.1.1
+# Security audit: Goldfelty 1.1.1, updated for 1.2.0
 
 Date: 24 October 2026. Scope: the desktop app (`src/`), its build and release
 pipeline (`scripts/`, `electron-builder.yml`, `.github/workflows/`), the
 account API (`api/`) and goldfelty.com (`site/`). This was an internal review
 done alongside the 1.1.1 rewrite, not an independent audit; that still needs
 doing before Goldfelty is trusted with significant funds.
+
+Updated 25 October 2026 for 1.2.0, which adds Bitcoin, Solana and Tron (send
+and receive) and Litecoin, Dogecoin and XRP (balances only). See
+[1.2.0: other chains](#120-other-chains).
 
 ## Summary
 
@@ -28,7 +32,8 @@ version 1.0 created.
 | A malicious browser extension | Announce itself under any wallet's name | Nothing beyond what the user approves in that "wallet"; see accepted risk A5 |
 | Someone on the same network | Nothing: every local service binds to `127.0.0.1` | |
 | Another user, or malware, on the same computer | Read files, browser history, environment, other local ports | Keep holdings encrypted at rest; never leave a working secret in history; malware running as the user is out of scope (A1) |
-| A compromised goldfelty.com (GitHub Pages) | Change the fee rate, change the site | Never redirect funds; keep the rate within 0 to 10% and visible before every send |
+| A compromised goldfelty.com (GitHub Pages) | Change the site | Never redirect funds or change the fee: since 1.2.0 the app fetches nothing from goldfelty.com at all unless the user makes an account |
+| A compromised chain API (Esplora, Solana RPC, TronGrid) | Lie about coins, blockhashes, or the transaction it builds | Never get a transaction signed or broadcast that differs from what the user reviewed |
 | A compromised RPC provider or price feed | Lie about balances and prices | Never cause a send the wallet didn't show the user |
 | An internet attacker against api.goldfelty.com | Flood it, guess names, replay bodies, forge signatures | Rate-limit, bound inputs, verify signatures exactly |
 | The renderer, if compromised by a bug | Call any IPC verb | Only reach named verbs with validated arguments; no network; no new windows |
@@ -83,8 +88,8 @@ Severity: **High** can lose funds or expose secrets with little user action;
 
 ## Design choices worth knowing
 
-- **The fee address is fixed at build time** (`GOLDFELTY_FEE_ADDRESS`). Only the rate is read from goldfelty.com, clamped to 0 to 10%. A compromised site could raise the rate within that range, but couldn't redirect anyone's money, and the app never charges more than the rate shown on the review screen.
-- **The fee goes after the transfer** as its own transaction, so it is only ever requested once the user's transfer has gone out, and the wallet shows it for what it is.
+- **The fee is a fixed 0.5%, and its addresses are fixed at build time** (`GOLDFELTY_FEE_ADDRESS`, plus `_BTC`, `_SOL` and `_TRX`). Since 1.2.0 nothing is fetched to decide either, so no server can raise the rate or redirect fees. (1.1 read the rate from goldfelty.com/fees.json, clamped to 0 to 10%; that file stays at 0.5% for 1.1 users.) The app never charges more than the rate on the review screen.
+- **On EVM networks and Tron the fee goes after the transfer** as its own transaction, so it is only requested once the user's transfer has gone out. **On Bitcoin and Solana it is inside the transfer** (an extra output, or a second transfer instruction), so the wallet shows both payments on one screen and they succeed or fail together.
 - **Sharing portfolio totals is off by default.** When on, it sends one number, its currency and a wallet count. Turning it off deletes the server copy.
 - **WalletConnect is the only third-party relay**, used for phones only. Browser wallets and Frame are reached directly on the user's machine.
 
@@ -93,7 +98,7 @@ Severity: **High** can lose funds or expose secrets with little user action;
 | ID | Risk | Why accepted, or what would fix it |
 |---|---|---|
 | A1 | Malware running as the user can read the password as it's typed, alter the installed app, set environment variables the app honours (`GOLDFELTY_API_URL` and similar), pose as Frame on port 1248, or open its own bridge tab. | Out of scope for any desktop app. Code signing (A2) and asar integrity (A3) would make tampering detectable. |
-| A2 | Builds aren't signed by Apple or Microsoft, so users can't verify where a download came from beyond the published checksums. | Set `CSC_LINK`, `CSC_KEY_PASSWORD` and the `APPLE_*` secrets; the release workflow already handles signing and notarisation when they exist. |
+| A2 | Builds aren't signed by Apple or Microsoft yet. | Partly mitigated since 1.2.0: every release file carries a build provenance attestation (`gh attestation verify`), so a file swapped after the build is detectable, and downloads come from GitHub Releases rather than goldfelty.com. Full fix: the Apple and Azure Trusted Signing credentials in [CODE-SIGNING.md](CODE-SIGNING.md); the workflow signs and notarizes as soon as they exist. |
 | A3 | The embedded asar integrity fuse is off. | It needs per-platform support from the packager and testing on each OS; turn it on once signed builds exist. |
 | A4 | Decrypted data passes through JavaScript strings, which can't be zeroed. | Keys are held in buffers and wiped on lock; the strings are garbage collected. |
 | A5 | EIP-6963 has no authentication, so a malicious extension can announce itself as any wallet. | Inherent to browser wallets. The user still approves everything in what they believe is their wallet; the post-send mismatch check (L3) catches substituted transfers after the fact. |
@@ -104,16 +109,32 @@ Severity: **High** can lose funds or expose secrets with little user action;
 | A10 | The owner dashboard is protected by a single bearer secret. | Use a long random value and rotate it by updating the `GOLDFELTY_ADMIN_TOKEN` secret and redeploying. |
 | A11 | Account emails are stored in plaintext in D1. | Needed to contact users; D1 is encrypted at rest by Cloudflare. |
 
+## 1.2.0: other chains
+
+On Bitcoin, Solana and Tron, Goldfelty builds the transaction and the wallet
+only signs it, so this review asked one question of each: can anything between
+the review screen and the network change what is sent?
+
+| ID | Area | Issue | Status |
+|---|---|---|---|
+| C1 | Bitcoin | A wallet (or something posing as one in the browser) could return a PSBT with different outputs. | Designed out: the unsigned transaction the wallet returns must equal Goldfelty's byte for byte, before finalizing; then Goldfelty broadcasts it and checks the txid the API reports. |
+| C2 | Bitcoin | A hostile fee API could make the network fee huge. | Fee rates above 500 sat/vB are refused, and bitcoinjs refuses to extract a transaction with an absurd fee. |
+| C3 | Solana | A wallet could add instructions or change the fee payer. | The signed message must equal Goldfelty's byte for byte, carry exactly one signature, and that signature must verify against the sender's key. The encoding was checked against @solana/web3.js and @solana/spl-token. |
+| C4 | Solana | A fee to an account that doesn't exist yet would make the user pay to open it, or fail the whole transfer. | The fee is left out (and not shown) unless Goldfelty's token account already exists, or the SOL amount covers the rent minimum. |
+| C5 | Tron | TronGrid builds the transaction, so a compromised TronGrid could build a different one. | The raw bytes the signature covers are decoded (a small protobuf reader, checked against TronWeb's encoder) and the sender, recipient or token contract, amount, call data, fee limit and expiry must match; the txID must be the hash of those bytes. The returned signature must recover to the sender. |
+| C6 | All | A recipient address from another chain could be pasted. | Every address is validated for the chain being sent on; Litecoin, Dogecoin and XRP refuse sends outright. |
+| C7 | Tests | Two chain tests silently depended on the public APIs being unreachable. | Fixed: tests use only local mock endpoints. |
+
 ## Verification
 
-- `npm test`: 85 tests over the main process, including the bridge's ticket, cookie, Host, Origin, CSP and tab-isolation rules over real HTTP; Frame against a mock socket (chain switching, refusal on mismatch); vault v2 and v1 migration; encrypted store; settings rules; unlock throttling; fees; lookalike and mismatch detection; and the account client against mock servers.
+- `npm test`: 113 tests over the main process, including Bitcoin sends from all four address types with tampered, unsigned and short-funded cases, Solana and Tron sends with tampered messages and wrong signers, and the send flow with per-chain fees; including the bridge's ticket, cookie, Host, Origin, CSP and tab-isolation rules over real HTTP; Frame against a mock socket (chain switching, refusal on mismatch); vault v2 and v1 migration; encrypted store; settings rules; unlock throttling; fees; lookalike and mismatch detection; and the account client against mock servers.
 - `api/`: 35 tests, including the Worker's SQL run against real SQLite.
-- `scripts/e2e.cjs`: drives the built app with a fake browser wallet, the real account API code and mock RPC. It checks that the renderer can't reach the network, a reused bridge link is refused, a send goes out on the right chain with the right fee, and no wallet address or email is readable in any file on disk. Any CSP violation or console error fails the run.
+- `scripts/e2e.cjs`: drives the built app with fake EVM, Solana (Wallet Standard) and Bitcoin (UniSat) wallets in a real browser tab, sends ETH, SOL and BTC and checks each broadcast transaction's recipient and fee, the real account API code and mock RPC. It checks that the renderer can't reach the network, a reused bridge link is refused, a send goes out on the right chain with the right fee, and no wallet address or email is readable in any file on disk. Any CSP violation or console error fails the run.
 - `npm audit`: 0 vulnerabilities in the app.
 
 ## Recommended next steps
 
-1. Get the builds signed (A2), then turn on asar integrity (A3).
+1. Get the builds signed (A2, [CODE-SIGNING.md](CODE-SIGNING.md)), then turn on asar integrity (A3).
 2. Commission an independent audit before promoting Goldfelty for significant amounts.
 3. Review the Terms and Privacy Policy with a lawyer for the places you operate.
 

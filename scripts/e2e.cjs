@@ -412,8 +412,7 @@ function makeWalletBackend() {
       GOLDFELTY_API_URL: `${mocks.origin}/v1`,
       GOLDFELTY_FEE_ADDRESS: FEE_ADDRESS,
       GOLDFELTY_FEE_ADDRESS_SOL: SOL_FEE_ADDRESS,
-      GOLDFELTY_FEE_ADDRESS_BTC: BTC_FEE_ADDRESS,
-      GOLDFELTY_FEE_CONFIG_URL: `${mocks.origin}/fees.json`
+      GOLDFELTY_FEE_ADDRESS_BTC: BTC_FEE_ADDRESS
     }
   })
   const page = await app.firstWindow()

@@ -5,7 +5,7 @@ import { providerFor } from './rpc.ts'
 import { fetchPrices } from './prices.ts'
 import { erc20Interface } from './erc20.ts'
 import { currentFeeBps, planFee, type FeePlan } from './fees.ts'
-import { MAX_FEE_BPS } from '../shared/fees.ts'
+import { FEE_BPS } from '../shared/fees.ts'
 import { TOKEN_BY_KEY, TOKENS, getChain, txUrl } from '../shared/chains.ts'
 import { canSign } from '../shared/types.ts'
 import { sameAddress, validateFor } from './addresses.ts'
@@ -219,7 +219,7 @@ export async function quoteTransfer(
   const to = parseRecipient(input.to, chain)
   const units = parseAmount(input.amount, token)
   const warnings: string[] = []
-  let fee = planFee(token, units, wallet.address, await currentFeeBps())
+  let fee = planFee(token, units, wallet.address, currentFeeBps())
   const same = (a: string, b: string): boolean => sameAddress(chain.family, a, b)
 
   if (same(to, wallet.address)) warnings.push('You’re sending to the same wallet it comes from.')
@@ -294,8 +294,8 @@ export async function executeTransfer(
 
   // Charge exactly the rate the user saw on the review screen, never more.
   const shown = Number(input.feeBps)
-  if (!Number.isInteger(shown) || shown < 0 || shown > MAX_FEE_BPS) throw new SendError('Review the transfer again.', 'FEE_CHANGED')
-  const fee = planFee(token, units, wallet.address, await currentFeeBps())
+  if (!Number.isInteger(shown) || shown < 0 || shown > FEE_BPS) throw new SendError('Review the transfer again.', 'FEE_CHANGED')
+  const fee = planFee(token, units, wallet.address, currentFeeBps())
 
   if (chain.family !== 'evm') return executeOther(store, settings, sender, wallet, token, chain, to, units, fee, shown)
 

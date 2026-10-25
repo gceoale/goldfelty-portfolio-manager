@@ -294,7 +294,7 @@ function FeesSection(): JSX.Element {
       >
         <strong>{fee?.enabled ? formatFeeRate(fee.bps) : '0%'}</strong>
       </Row>
-      <Row label="Terms of Service" detail="The owner of goldfelty.com can set the fee anywhere from 0% to 10%.">
+      <Row label="Terms of Service" detail="The fee is a fixed 0.5%, built into the app.">
         <Button small onClick={() => void api.app.openExternal(TERMS_URL)}>
           Read
         </Button>

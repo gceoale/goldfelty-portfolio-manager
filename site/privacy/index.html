@@ -19,7 +19,7 @@
 
   <article class="doc">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated 24 October 2026</p>
+    <p class="updated">Last updated 25 October 2026</p>
 
     <h2>On your computer</h2>
     <p>
@@ -31,7 +31,7 @@
     <h2>What we receive</h2>
     <table>
       <tr><th>When</th><th>What goldfelty.com receives</th></tr>
-      <tr><td>Always</td><td>Only a request for the current fee rate (goldfelty.com/fees.json), which carries nothing about you beyond the IP address any web request shows. The app has no analytics or crash reporting.</td></tr>
+      <tr><td>Always</td><td>Nothing. The app has no analytics or crash reporting, and the fee rate is built in rather than fetched. (Version 1.1 asked goldfelty.com/fees.json for the rate.)</td></tr>
       <tr><td>You create an account</td><td>Your username, email address, one wallet address and a signature from that wallet proving you control it.</td></tr>
       <tr><td>You turn on “Share my portfolio total”</td><td>Your total portfolio value, its currency and how many wallets it spans, at most every six hours. Never individual addresses or holdings.</td></tr>
       <tr><td>Any request to the account service</td><td>Your IP address, kept only as a one-way hash in short-lived rate-limit counters that are regularly deleted.</td></tr>
@@ -52,10 +52,12 @@
 
     <h2>Services involved</h2>
     <p>
-      goldfelty.com is hosted on GitHub Pages and its account service on Cloudflare. The app also contacts blockchain
-      RPC providers to read balances, CoinGecko for prices, and WalletConnect if you connect a phone wallet. Each of
-      those sees your IP address and the requests the app makes to it. You can point the app at your own node in
-      Settings.
+      goldfelty.com is hosted on GitHub Pages and its account service on Cloudflare. The app also contacts public
+      blockchain services to read balances and send transfers: RPC providers for Ethereum-family networks;
+      mempool.space and Blockstream for Bitcoin; litecoinspace.org for Litecoin; Blockchair for Dogecoin; Solana’s
+      public RPC and PublicNode for Solana; TronGrid for Tron; and the XRP Ledger’s public servers. It contacts
+      CoinGecko for prices, and WalletConnect if you connect a phone wallet. Each of those sees your IP address and
+      the addresses the app asks about. You can point the app at your own node or API in Settings.
     </p>
 
     <h2>Your choices</h2>

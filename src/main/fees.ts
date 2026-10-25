@@ -1,5 +1,5 @@
 import { getAddress, isAddress } from 'ethers'
-import { DEFAULT_FEE_BPS, FEE_CHAIN_IDS, clampFeeBps, feeUnits } from '../shared/fees.ts'
+import { FEE_BPS, FEE_CHAIN_IDS, feeUnits } from '../shared/fees.ts'
 import { CHAIN_BY_ID, chainsOfFamily } from '../shared/chains.ts'
 import { sameAddress, validateFor } from './addresses.ts'
 import type { ChainFamily, TokenDef } from '../shared/types.ts'
@@ -7,15 +7,12 @@ import type { ChainFamily, TokenDef } from '../shared/types.ts'
 /**
  * Where the send fee goes, and at what rate.
  *
+ * The rate is a fixed 0.5% (FEE_BPS), set in the app itself. Nothing is
+ * fetched to decide it, so no server, including goldfelty.com, can raise it.
+ *
  * The recipients are fixed when the app is built (the GOLDFELTY_FEE_ADDRESS
  * repository variables: one for EVM networks, and _BTC, _SOL and _TRX for
- * Bitcoin, Solana and Tron). It is deliberately not fetched at runtime: if
- * goldfelty.com were ever compromised, the worst an attacker could do is
- * change the rate, within 0% to 10%, and every user would see the new rate
- * before sending. They could not redirect anyone's money.
- *
- * The rate comes from https://goldfelty.com/fees.json so the owner can
- * change it without a release.
+ * Bitcoin, Solana and Tron). They are never fetched at runtime either.
  */
 
 type FeeFamily = 'evm' | 'utxo' | 'solana' | 'tron'
@@ -33,12 +30,7 @@ const BUILT_IN: Record<FeeFamily, string> = {
   tron: (env?.MAIN_VITE_GOLDFELTY_FEE_ADDRESS_TRX || process.env.GOLDFELTY_FEE_ADDRESS_TRX || '').trim()
 }
 
-export const FEE_CONFIG_URL = process.env.GOLDFELTY_FEE_CONFIG_URL ?? 'https://goldfelty.com/fees.json'
-const CACHE_MS = 60 * 60_000
-const TIMEOUT_MS = 4_000
-
 const overrides = new Map<ChainFamily, string | null>()
-let cached: { bps: number; at: number } | null = null
 
 /** The fee address for a chain family, or null when this build has none (no fee there). */
 export function feeRecipient(family: ChainFamily = 'evm'): string | null {
@@ -62,34 +54,11 @@ export function feesEnabled(): boolean {
 export function setFeeRecipientForTests(address: string | null | undefined, family: ChainFamily = 'evm'): void {
   if (address === undefined) overrides.delete(family)
   else overrides.set(family, address)
-  cached = null
 }
 
-/** The current rate in basis points. Never throws; falls back to the last known or default rate. */
-export async function currentFeeBps(now = Date.now()): Promise<number> {
-  // No fee address in this build: no fee, and no reason to ask the site.
-  if (!feesEnabled()) return 0
-  if (cached && now - cached.at < CACHE_MS) return cached.bps
-  try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
-    let text: string
-    try {
-      const res = await fetch(FEE_CONFIG_URL, { redirect: 'error', signal: controller.signal, headers: { accept: 'application/json' } })
-      if (!res.ok) throw new Error(String(res.status))
-      text = await res.text()
-    } finally {
-      clearTimeout(timer)
-    }
-    if (text.length > 4096) throw new Error('too large')
-    const body = JSON.parse(text) as { feeBps?: unknown }
-    if (typeof body.feeBps !== 'number') throw new Error('no feeBps')
-    cached = { bps: clampFeeBps(body.feeBps), at: now }
-  } catch {
-    // Offline or a bad file: keep the last rate we had, or the default.
-    cached = { bps: cached?.bps ?? DEFAULT_FEE_BPS, at: now - CACHE_MS + 5 * 60_000 }
-  }
-  return cached.bps
+/** The rate in basis points: the fixed 0.5%, or 0 when this build has no fee address. */
+export function currentFeeBps(): number {
+  return feesEnabled() ? FEE_BPS : 0
 }
 
 export interface FeePlan {

@@ -365,7 +365,6 @@ test('Tron: a different amount from the API, or a different signer, is refused',
 
 /* ---- Through the send flow, with fees ------------------------------------------------- */
 
-process.env.GOLDFELTY_FEE_CONFIG_URL = `${origin}/fees.json`
 const fees = await import('../src/main/fees.ts')
 const { quoteTransfer, executeTransfer } = await import('../src/main/transfers.ts')
 const { Store } = await import('../src/main/store.ts')
@@ -394,7 +393,6 @@ const conn = (family, rdns, account, chainId, extra = {}) => ({
   topic: null,
   ...extra
 })
-// The fee file isn't served, so the default 0.5% applies.
 const SEND_SETTINGS = { ...SETTINGS }
 
 test('send flow: Bitcoin fee rides in the same transaction, to the BTC fee address', async (t) => {

@@ -6,18 +6,21 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { Interface } from 'ethers'
-import { feeUnits, clampFeeBps, formatFeeRate, MAX_FEE_BPS, DEFAULT_FEE_BPS, FEE_CHAIN_IDS } from '../src/shared/fees.ts'
+import { feeUnits, formatFeeRate, FEE_BPS, FEE_CHAIN_IDS } from '../src/shared/fees.ts'
 import { TOKENS, tokenKey } from '../src/shared/chains.ts'
 
 const OWNER = '0x8617E340B3D01FA5F11F306F4090FD50E238070D'
 const USER = '0x52908400098527886E0F7030069857D2E4169EE7'
 const FRIEND = '0xde709f2102306220921060314715629080e2fb77'
 
-// The rate file is served locally; set before the modules read it.
-let served = { feeBps: 50 }
+// Counts requests for a rate file, which the app must never make: the rate is fixed.
+let rateRequests = 0
 const server = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'application/json' })
-  if (req.url.startsWith('/fees.json')) return res.end(typeof served === 'string' ? served : JSON.stringify(served))
+  if (req.url.startsWith('/fees.json')) {
+    rateRequests++
+    return res.end(JSON.stringify({ feeBps: 1000 }))
+  }
   if (req.url.startsWith('/simple/price')) return res.end('{}')
   // Anything else is JSON-RPC: answer "not found" so nothing waits on the network.
   let body = ''
@@ -29,7 +32,6 @@ const server = createServer((req, res) => {
   })
 })
 await new Promise((r) => server.listen(0, '127.0.0.1', r))
-process.env.GOLDFELTY_FEE_CONFIG_URL = `http://127.0.0.1:${server.address().port}/fees.json`
 const fees = await import('../src/main/fees.ts')
 const { executeTransfer } = await import('../src/main/transfers.ts')
 const { Store } = await import('../src/main/store.ts')
@@ -46,40 +48,29 @@ test.after(() => {
   server.close()
 })
 
-test('the rate is clamped to the 0% to 10% the Terms allow', () => {
-  assert.equal(MAX_FEE_BPS, 1000)
-  assert.equal(DEFAULT_FEE_BPS, 50)
-  assert.equal(clampFeeBps(5000), 1000)
-  assert.equal(clampFeeBps(-5), 0)
-  assert.equal(clampFeeBps('nope'), 0)
-  assert.equal(formatFeeRate(50), '0.5%')
-  assert.equal(formatFeeRate(1000), '10%')
+test('the fee is a fixed 0.5%', () => {
+  assert.equal(FEE_BPS, 50)
+  assert.equal(formatFeeRate(FEE_BPS), '0.5%')
+  assert.equal(formatFeeRate(5000), '0.5%', 'nothing can display a higher rate')
 })
 
-test('the fee rounds down, so it never exceeds the stated rate', () => {
+test('the fee rounds down, and can never be more than 0.5%', () => {
   assert.equal(feeUnits(1_000_000n, 50), 5_000n) // 1 USDC -> 0.005
   assert.equal(feeUnits(199n, 50), 0n)
-  assert.equal(feeUnits(10n ** 18n, 1000), 10n ** 17n)
+  assert.equal(feeUnits(10n ** 18n, 1000), 5n * 10n ** 15n, 'a larger rate is held to 0.5%')
 })
 
-test('no fee address in the build means no fee, and no request to the site', async () => {
+test('no fee address in the build means no fee', () => {
   fees.setFeeRecipientForTests(null)
-  assert.equal(await fees.currentFeeBps(), 0)
+  assert.equal(fees.currentFeeBps(), 0)
   const eth = TOKENS.find((t) => t.key === tokenKey(1, null))
   assert.equal(fees.planFee(eth, 10n ** 18n, USER, 50), null)
 })
 
-test('reads the rate from the site, clamps it, and falls back when it is unreachable', async () => {
+test('the rate is 0.5% and nothing is fetched to decide it', () => {
   fees.setFeeRecipientForTests(OWNER)
-  served = { feeBps: 75 }
-  assert.equal(await fees.currentFeeBps(0), 75)
-  served = { feeBps: 99999 }
-  assert.equal(await fees.currentFeeBps(2 * 3600_000), 1000, 'a typo on the site cannot exceed 10%')
-  served = 'not json'
-  assert.equal(await fees.currentFeeBps(4 * 3600_000), 1000, 'a broken file keeps the last good rate')
-  fees.setFeeRecipientForTests(OWNER)
-  served = 'not json'
-  assert.equal(await fees.currentFeeBps(0), DEFAULT_FEE_BPS, 'with nothing known, the default applies')
+  assert.equal(fees.currentFeeBps(), 50)
+  assert.equal(rateRequests, 0, 'no server, goldfelty.com included, is asked for a rate')
 })
 
 test('only charged on networks the fee wallet supports, and never on the owner', () => {
@@ -109,7 +100,6 @@ const erc20 = new Interface(['function transfer(address,uint256)'])
 
 test('sends the transfer first, then the fee as its own transaction to the owner', async (t) => {
   fees.setFeeRecipientForTests(OWNER)
-  served = { feeBps: 50 }
   const { store, wallet } = setup(t)
   const usdc = TOKENS.find((x) => x.chainId === 1 && x.symbol === 'USDC')
   const sent = []
@@ -128,20 +118,18 @@ test('sends the transfer first, then the fee as its own transaction to the owner
 
 test('never charges more than the rate the user reviewed', async (t) => {
   fees.setFeeRecipientForTests(OWNER)
-  served = { feeBps: 200 }
   const { store, wallet } = setup(t)
   let asked = false
   const sender = { isReachable: () => true, sendTransaction: async () => ((asked = true), '0x' + 'a'.repeat(64)) }
   await assert.rejects(
-    executeTransfer(store, SETTINGS, sender, { walletId: wallet.id, tokenKey: tokenKey(1, null), to: FRIEND, amount: '1', feeBps: 50 }),
+    executeTransfer(store, SETTINGS, sender, { walletId: wallet.id, tokenKey: tokenKey(1, null), to: FRIEND, amount: '1', feeBps: 0 }),
     (e) => e.code === 'FEE_CHANGED'
   )
-  assert.equal(asked, false, 'nothing was sent when the rate went up after review')
+  assert.equal(asked, false, 'nothing was sent when the review showed no fee but one would be charged')
 })
 
 test('a declined fee does not undo the transfer, and is reported', async (t) => {
   fees.setFeeRecipientForTests(OWNER)
-  served = { feeBps: 50 }
   const { store, wallet } = setup(t)
   let n = 0
   const sender = {

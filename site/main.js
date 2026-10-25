@@ -56,14 +56,4 @@
       .catch(function () {})
   }
 
-  var rate = document.getElementById('fee-rate')
-  if (rate) {
-    fetch('/fees.json', { cache: 'no-store' })
-      .then(function (r) { return r.json() })
-      .then(function (f) {
-        var bps = Math.max(0, Math.min(1000, Math.round(Number(f.feeBps) || 0)))
-        rate.textContent = Number((bps / 100).toFixed(2)) + '%'
-      })
-      .catch(function () {})
-  }
 })()

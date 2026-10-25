@@ -276,7 +276,7 @@ export function registerIpc(runtime: Runtime): void {
   // For Settings and the send screen: whether this build charges a fee, and the rate now.
   handle('app:feeInfo', async () => ({
     enabled: feesEnabled(),
-    bps: await currentFeeBps(),
+    bps: currentFeeBps(),
     recipient: feeRecipient(),
     recipients: { evm: feeRecipient('evm'), utxo: feeRecipient('utxo'), solana: feeRecipient('solana'), tron: feeRecipient('tron') }
   }))
@@ -559,7 +559,7 @@ export function registerIpc(runtime: Runtime): void {
   handle('send:routes', async (symbol, amount) => {
     requireUnlocked(runtime)
     // Include the fee, so a wallet that can cover the amount but not the fee isn't shown as enough.
-    const bps = await currentFeeBps()
+    const bps = currentFeeBps()
     return routesForSymbol(store, sender, runtime.lastBalances, str(symbol, 16, 'symbol'), (Number(amount) || 0) * (1 + bps / 10_000))
   })
 

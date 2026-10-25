@@ -23,7 +23,7 @@
   "name": "Goldfelty Portfolio Manager",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "macOS, Windows, Linux",
-  "softwareVersion": "1.1.2",
+  "softwareVersion": "1.2.0",
   "url": "https://goldfelty.com/",
   "downloadUrl": "https://github.com/gceoalexyt-ops/goldfelty-portfolio-manager/releases/latest",
   "screenshot": "https://goldfelty.com/screenshot.png",
@@ -81,7 +81,7 @@
 
   <section id="wallets">
     <h2>Wallets it connects to</h2>
-    <p class="muted">These 33 browser wallets, plus any other that announces itself the standard way (EIP-6963). Frame on the desktop, with Ledger, Trezor and GridPlus through it. Any phone wallet that supports WalletConnect.</p>
+    <p class="muted">These 38 browser wallets, plus any other that announces itself the standard way (EIP-6963). Frame on the desktop, with Ledger, Trezor and GridPlus through it. Any phone wallet that supports WalletConnect.</p>
     <ul class="wallets">
       <li>MetaMask</li><li>Rabby</li><li>Coinbase Wallet</li><li>Phantom</li><li>Brave Wallet</li>
       <li>Trust Wallet</li><li>OKX Wallet</li><li>Rainbow</li><li>Zerion</li><li>Frame Companion</li>
@@ -89,13 +89,21 @@
       <li>Uniswap Extension</li><li>Core</li><li>Talisman</li><li>SubWallet</li><li>Ronin Wallet</li>
       <li>TokenPocket</li><li>Coin98</li><li>SafePal</li><li>Ctrl</li><li>OneKey</li>
       <li>Magic Eden</li><li>Wigwam</li><li>Fordefi</li><li>Zeal</li><li>Ambire</li>
-      <li>Gate Wallet</li><li>Opera Wallet</li><li>Crypto.com Onchain</li>
+      <li>Gate Wallet</li><li>Opera Wallet</li><li>Crypto.com Onchain</li><li>Solflare</li><li>UniSat</li>
+      <li>Xverse</li><li>Leather</li><li>TronLink</li>
     </ul>
     <p class="note">
       Some wallets don’t let other apps connect at all, the Exodus desktop and phone apps among them. Goldfelty can
       track their addresses so the balances count in your portfolio; you send from the wallet itself.
     </p>
-    <p class="note">Networks: Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Avalanche.</p>
+    <p class="note">
+      Send and receive on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain, Avalanche, Bitcoin, Solana and
+      Tron. Track balances on Litecoin, Dogecoin and the XRP Ledger too.
+    </p>
+    <p class="note">
+      Bitcoin wallets: UniSat, Xverse, Leather, OKX, Bitget and OneKey. Solana wallets: any that support the Solana
+      Wallet Standard, including Phantom, Solflare, Backpack and MetaMask. Tron: TronLink, OKX and Bitget.
+    </p>
   </section>
 
   <section id="download">
@@ -108,8 +116,10 @@
       <tr><td>Linux</td><td>AppImage, deb, rpm and tar.gz, for x64 and arm64</td></tr>
     </table>
     <p class="note">
-      Each release lists SHA-256 checksums in <code>SHA256SUMS.txt</code>. Builds are not yet signed by Apple or
-      Microsoft. On macOS, after moving the app to Applications, run
+      Downloads come straight from GitHub Releases. Each file is listed in <code>SHA256SUMS.txt</code> and carries a
+      build provenance attestation, a signed public record of the exact build that made it; check one with
+      <code>gh attestation verify &lt;file&gt; --repo gceoalexyt-ops/goldfelty-portfolio-manager</code>. Builds are not
+      yet signed by Apple or Microsoft. On macOS, after moving the app to Applications, run
       <code>xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"</code>.
     </p>
   </section>
@@ -117,10 +127,10 @@
   <section>
     <h2>What it costs</h2>
     <p>
-      The app is free. Goldfelty takes a fee on tokens you send through it, currently <strong id="fee-rate">0.5%</strong>,
-      paid on top of the amount you send. The fee is shown on the review screen before anything is sent, and your
-      wallet asks you to approve it as its own transaction. The owner of goldfelty.com can set the fee anywhere from
-      0% to 10%; see the <a href="/terms/">Terms</a>.
+      The app is free, and so are viewing balances, tracking addresses and receiving. Sending through Goldfelty costs
+      a fixed <strong>0.5%</strong>, paid on top of the amount you send. The rate is built into the app, so no server
+      can raise it. It’s shown on the review screen before anything is sent, and your wallet asks you to approve it.
+      See the <a href="/terms/">Terms</a>.
     </p>
   </section>
 
