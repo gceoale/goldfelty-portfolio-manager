@@ -56,7 +56,7 @@ for (const [name, family, key, label] of FEES) {
 
 const admin = process.env.GOLDFELTY_ADMIN_TOKEN ?? ''
 if (!admin) bad('GOLDFELTY_ADMIN_TOKEN', 'Not set: the owner dashboard stays off.')
-else if (admin.length < 32) bad('GOLDFELTY_ADMIN_TOKEN', `Too short: ${admin.length} characters, needs 32 or more.`)
+else if (admin.length < 16) bad('GOLDFELTY_ADMIN_TOKEN', `Too short: ${admin.length} characters, needs 16 or more.`)
 else if (/^(.)\1+$/.test(admin)) bad('GOLDFELTY_ADMIN_TOKEN', 'One character repeated; use a random value.')
 else ok('GOLDFELTY_ADMIN_TOKEN', `Set, ${admin.length} characters.`)
 

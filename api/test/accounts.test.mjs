@@ -314,3 +314,17 @@ test('a user token is not an admin token', async () => {
   const res = await handleRequest(db, authed('/v1/admin/stats', json.token), Date.now(), { adminToken: ADMIN })
   assert.equal(res.status, 401)
 })
+
+test('a 16-character admin token works, and guessing is cut off after 10 tries in 15 minutes', async () => {
+  const db = makeDb()
+  const sixteen = 'Abcdefgh123456!?'
+  const req = (token) => new Request('https://api.goldfelty.com/v1/admin/stats', { headers: { authorization: `Bearer ${token}` } })
+  assert.equal((await handleRequest(db, req(sixteen.slice(0, 15)), Date.now(), { adminToken: sixteen.slice(0, 15) })).status, 503, '15 characters is too short')
+  assert.equal((await handleRequest(db, req(sixteen), Date.now(), { adminToken: sixteen })).status, 200)
+
+  const guesser = makeLimitedDb()
+  const now = Date.now()
+  for (let i = 0; i < 10; i++) assert.equal((await handleRequest(guesser, req(`wrong-guess-${i}xx`), now, { adminToken: sixteen })).status, 401)
+  assert.equal((await handleRequest(guesser, req(sixteen), now, { adminToken: sixteen })).status, 429, 'even the right token waits once the limit is hit')
+  assert.equal((await handleRequest(guesser, req(sixteen), now + 15 * 60_000 + 1, { adminToken: sixteen })).status, 200, 'and works again after the window')
+})

@@ -106,7 +106,7 @@ Severity: **High** can lose funds or expose secrets with little user action;
 | A7 | A user can decline the fee transaction. | A business choice, covered in the Terms. Charging the fee first would mean charging for transfers that never happen. |
 | A8 | Wrangler's local development server (miniflare) pulls in an `undici` with known advisories. | Resolved 25 October 2026: `api/package.json` overrides `undici` to a patched 7.30.x; `npm audit` in `api/` reports 0. |
 | A9 | Funds already sent to 1.0 smart-account addresses can't be recovered. | Nothing in software can move them; see H3. |
-| A10 | The owner dashboard is protected by a single bearer secret. | Use a long random value and rotate it by updating the `GOLDFELTY_ADMIN_TOKEN` secret and redeploying. |
+| A10 | The owner dashboard is protected by a single bearer secret, which the owner chose to allow as short as 16 characters. | Wrong guesses are limited to 10 per IP address every 15 minutes, and the admin page only accepts the token over HTTPS. A longer random value is still stronger; rotate it by updating the `GOLDFELTY_ADMIN_TOKEN` secret and redeploying. |
 | A11 | Account emails are stored in plaintext in D1. | Needed to contact users; D1 is encrypted at rest by Cloudflare. |
 | A12 | Updates are trusted as far as the GitHub account that publishes them: whoever controls it can publish a release every copy then installs. | Protect the account with a passkey or hardware key and keep its sessions few. Once builds are signed (A2), the updater can also require the Apple or Microsoft signature to match. Users can turn automatic updates off. |
 
