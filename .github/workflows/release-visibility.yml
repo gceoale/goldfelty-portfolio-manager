@@ -1,0 +1,40 @@
+name: Hide or show a release
+
+# Run by hand to take a release down without deleting it (it goes back to
+# a draft, so only maintainers can see it) or to put it back up.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v1.2.0'
+        required: true
+        type: string
+      action:
+        description: 'hide = back to draft, show = publish again as latest'
+        required: true
+        type: choice
+        options: [hide, show]
+
+permissions:
+  contents: write
+
+jobs:
+  visibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag must look like v1.2.0"; exit 1
+          fi
+          if [ "$ACTION" = hide ]; then
+            gh release edit "$TAG" --draft=true
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
+          gh release list --limit 5
