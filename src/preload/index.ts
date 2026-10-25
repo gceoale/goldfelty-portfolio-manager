@@ -18,6 +18,7 @@ import type {
   Settings,
   TokenDef,
   TransferRecord,
+  UpdateStatus,
   Wallet,
   WalletConnection
 } from '../shared/types.ts'
@@ -41,7 +42,8 @@ const EVENTS = new Set([
   'connections:changed',
   'connections:progress',
   'connections:approved',
-  'connections:failed'
+  'connections:failed',
+  'updates:changed'
 ])
 
 function on(channel: string, listener: (payload: unknown) => void): Unsubscribe {
@@ -63,6 +65,15 @@ const api = {
     feeInfo: () => call<{ enabled: boolean; bps: number; recipient: string | null }>('app:feeInfo'),
     dismissUpgradeNotice: () => call<boolean>('app:dismissUpgradeNotice'),
     showBackup: () => call<boolean>('app:showBackup')
+  },
+  updates: {
+    status: () => call<UpdateStatus>('updates:status'),
+    /** Checks now, and downloads a newer version if there is one. */
+    check: () => call<UpdateStatus>('updates:check'),
+    /** Installs the downloaded update and restarts into it. */
+    install: () => call<UpdateStatus>('updates:install'),
+    setAuto: (on: boolean) => call<UpdateStatus>('updates:setAuto', on),
+    onChanged: (fn: (status: UpdateStatus) => void): Unsubscribe => on('updates:changed', (p) => fn(p as UpdateStatus))
   },
   setup: {
     scorePassword: (password: string) => call<{ score: number; label: string; problems: string[] }>('setup:scorePassword', password),

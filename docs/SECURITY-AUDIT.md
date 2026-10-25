@@ -108,6 +108,7 @@ Severity: **High** can lose funds or expose secrets with little user action;
 | A9 | Funds already sent to 1.0 smart-account addresses can't be recovered. | Nothing in software can move them; see H3. |
 | A10 | The owner dashboard is protected by a single bearer secret. | Use a long random value and rotate it by updating the `GOLDFELTY_ADMIN_TOKEN` secret and redeploying. |
 | A11 | Account emails are stored in plaintext in D1. | Needed to contact users; D1 is encrypted at rest by Cloudflare. |
+| A12 | Updates are trusted as far as the GitHub account that publishes them: whoever controls it can publish a release every copy then installs. | Protect the account with a passkey or hardware key and keep its sessions few. Once builds are signed (A2), the updater can also require the Apple or Microsoft signature to match. Users can turn automatic updates off. |
 
 ## 1.2.0: other chains
 
@@ -123,6 +124,7 @@ the review screen and the network change what is sent?
 | C4 | Solana | A fee to an account that doesn't exist yet would make the user pay to open it, or fail the whole transfer. | The fee is left out (and not shown) unless Goldfelty's token account already exists, or the SOL amount covers the rent minimum. |
 | C5 | Tron | TronGrid builds the transaction, so a compromised TronGrid could build a different one. | The raw bytes the signature covers are decoded (a small protobuf reader, checked against TronWeb's encoder) and the sender, recipient or token contract, amount, call data, fee limit and expiry must match; the txID must be the hash of those bytes. The returned signature must recover to the sender. |
 | C6 | All | A recipient address from another chain could be pasted. | Every address is validated for the chain being sent on; Litecoin, Dogecoin and XRP refuse sends outright. |
+| C8 | Updates | An update installs code, so a malicious download would be as bad as a malicious install. | Downloads come only from GitHub over HTTPS (redirects outside GitHub's hosts are refused), must match both GitHub's recorded SHA-256 and the release's `SHA256SUMS.txt`, and on macOS must carry the right bundle id and version. Helper scripts take paths as arguments. Residual risk A12. |
 | C7 | Tests | Two chain tests silently depended on the public APIs being unreachable. | Fixed: tests use only local mock endpoints. |
 
 ## Verification

@@ -33,6 +33,13 @@ workflow from this exact commit.
 gh attestation verify <file> --repo gceoalexyt-ops/goldfelty-portfolio-manager
 ```
 
+**Automatic updates.** From this version on, Goldfelty updates itself the way
+you installed it: the Mac app, the Windows installer or portable app, the
+AppImage, the .deb or .rpm package, or the tar.gz folder. It downloads in the
+background, checks the file against the release’s checksums, and installs when
+you restart or quit. You can switch this off in Settings > Updates. Earlier
+versions don’t have the updater, so this one is a manual download.
+
 **Exodus.** The Exodus desktop and phone apps don’t let other apps connect to
 them, so Goldfelty tracks an Exodus address instead: Connect a wallet > Can’t
 connect > Exodus. “Another wallet” does the same for any address, on any of the

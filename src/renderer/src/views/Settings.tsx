@@ -2,7 +2,8 @@ import { useEffect, useState, type JSX } from 'react'
 import type { AccountApiStatus, Settings as SettingsT } from '@shared/types.ts'
 import { formatFeeRate } from '@shared/fees.ts'
 import { useApp } from '../state/app.tsx'
-import { Button, Group, Row, Segmented, StatusDot, TextInput, Toggle, Toolbar, WalletGlyph } from '../components/ui.tsx'
+import { useUpdates } from '../state/updates.ts'
+import { Button, Group, Row, Segmented, Spinner, StatusDot, TextInput, Toggle, Toolbar, WalletGlyph } from '../components/ui.tsx'
 import { shortAddress } from '../lib/format.ts'
 
 const api = window.goldfelty
@@ -45,6 +46,7 @@ export function Settings(): JSX.Element {
         <Networks settings={settings} update={updateSettings} />
         <FeesSection />
         <DataSection />
+        <Updates />
         <About />
       </div>
     </div>
@@ -340,6 +342,86 @@ function DataSection(): JSX.Element {
           </Button>
         )}
       </Row>
+    </Group>
+  )
+}
+
+/* ---- updates ---------------------------------------------------------------------- */
+
+function Updates(): JSX.Element {
+  const u = useUpdates()
+  const [busy, setBusy] = useState(false)
+  if (!u) return <Group title="Updates">{null}</Group>
+  const act = async (fn: () => Promise<unknown>): Promise<void> => {
+    setBusy(true)
+    await fn()
+    setBusy(false)
+  }
+  const check = (): Promise<void> => act(() => api.updates.check())
+  const pct = u.progress === null ? '' : ` ${Math.round(u.progress * 100)}%`
+
+  let text: string
+  let control: JSX.Element | null = null
+  switch (u.state) {
+    case 'checking':
+      text = 'Checking for updates…'
+      control = <Spinner />
+      break
+    case 'up-to-date':
+      text = 'Goldfelty is up to date.'
+      control = <Button small busy={busy} onClick={() => void check()}>Check now</Button>
+      break
+    case 'available':
+      text = `Version ${u.latest} is available.`
+      control = <Button small variant="primary" busy={busy} onClick={() => void check()}>Download</Button>
+      break
+    case 'downloading':
+      text = `Downloading version ${u.latest}…${pct}`
+      control = <Spinner />
+      break
+    case 'ready':
+      text = u.message ?? `Version ${u.latest} is ready. It installs when you restart or quit.`
+      control = <Button small variant="primary" busy={busy} onClick={() => void act(() => api.updates.install())}>Restart to update</Button>
+      break
+    case 'installing':
+      text = 'Installing…'
+      control = <Spinner />
+      break
+    case 'manual':
+      text = u.message ?? `Version ${u.latest} is available.`
+      control =
+        u.kind === 'dev' ? null : (
+          <Button small onClick={() => u.releaseUrl && void api.app.openExternal(u.releaseUrl)}>
+            Release page
+          </Button>
+        )
+      break
+    case 'error':
+      text = u.message ?? 'Something went wrong.'
+      control = <Button small busy={busy} onClick={() => void check()}>Try again</Button>
+      break
+    default:
+      text = 'Updates are checked a little after launch, then every six hours.'
+      control = <Button small busy={busy} onClick={() => void check()}>Check now</Button>
+  }
+
+  return (
+    <Group
+      title="Updates"
+      footer={
+        u.kind === 'dev'
+          ? undefined
+          : `Installed as: ${u.kindLabel}. Updates come in the same form, and each is checked against the release’s checksums before it installs.`
+      }
+    >
+      <Row label={`Version ${u.current}`} detail={text}>
+        {control}
+      </Row>
+      {u.kind !== 'dev' ? (
+        <Row label="Install updates automatically" detail="Downloads new versions in the background. They install when you restart or quit.">
+          <Toggle label="Install updates automatically" checked={u.autoUpdate} onChange={(on) => void api.updates.setAuto(on)} />
+        </Row>
+      ) : null}
     </Group>
   )
 }

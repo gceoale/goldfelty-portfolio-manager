@@ -253,6 +253,27 @@ export interface AppStatus {
   upgradeNotice: UpgradeNotice | null
 }
 
+/** How this copy of the app was installed, which decides how it updates. */
+export type InstallKind = 'mac' | 'nsis' | 'portable' | 'appimage' | 'deb' | 'rpm' | 'targz' | 'dev'
+
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'installing' | 'manual' | 'error'
+  current: string
+  /** The newest release's version, once known. */
+  latest: string | null
+  /** 0 to 1 while downloading. */
+  progress: number | null
+  kind: InstallKind
+  /** "Mac app", "Windows installer", "AppImage" and so on. */
+  kindLabel: string
+  /** Why it can't update itself, or what went wrong. */
+  message: string | null
+  /** The release page, for notes or a manual download. */
+  releaseUrl: string | null
+  autoUpdate: boolean
+  checkedAt: number | null
+}
+
 export interface UpgradeNotice {
   /** Addresses that version created, now kept read-only. */
   createdAddresses: string[]

@@ -142,6 +142,26 @@ opened"*. After moving the app to Applications:
 xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"
 ```
 
+## Updates
+
+From 1.2.0, Goldfelty updates itself the way it was installed. It checks
+GitHub a little after launch and then every six hours, downloads the newest
+release's file for this kind of install, and installs it on restart or quit:
+
+| Installed from | Updates by |
+|---|---|
+| `.dmg` or `-mac.zip` | Downloading the new `-mac.zip` and swapping the app in Applications |
+| `-setup.exe` | Running the new installer silently |
+| `-portable.exe` | Replacing the portable `.exe` |
+| `.AppImage` | Replacing the AppImage file |
+| `.deb` / `.rpm` | Installing the new package through the system's password prompt |
+| `.tar.gz` | Swapping in the new folder |
+
+Each file is checked against both GitHub's recorded SHA-256 and
+`SHA256SUMS.txt` before it's installed, and downloads may only come from
+GitHub. Settings > Updates can switch automatic downloads off. Versions before
+1.2.0 have no updater, so they need one manual download.
+
 ## Checking a download
 
 Each release lists SHA-256 checksums in `SHA256SUMS.txt`:

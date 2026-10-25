@@ -534,6 +534,19 @@ select.input {
 }
 
 .source-list button svg,
+.sidebar-foot .update-ready {
+  font-weight: 500;
+}
+
+.update-dot {
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
 .sidebar-foot button svg {
   color: var(--text-2);
   flex: none;

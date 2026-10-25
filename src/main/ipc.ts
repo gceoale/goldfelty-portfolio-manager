@@ -22,6 +22,7 @@ import { probeChain } from './rpc.ts'
 import { currentFeeBps, feeRecipient, feesEnabled } from './fees.ts'
 import { clearPriceMemory } from './prices.ts'
 import type { ConnectionManager, ConnectStage } from './connections/index.ts'
+import type { Updater } from './updater.ts'
 import { CHAINS, TOKENS, TOKEN_BY_KEY, getChain } from '../shared/chains.ts'
 import { WALLET_REGISTRY } from '../shared/walletRegistry.ts'
 import { canSign } from '../shared/types.ts'
@@ -41,6 +42,7 @@ export interface Runtime {
   vault: Vault
   prefs: Prefs
   connections: ConnectionManager
+  updater: Updater
   /** The window allowed to talk to the main process. */
   window: () => BrowserWindow | null
   /** The URL the renderer is loaded from; anything else is refused. */
@@ -280,6 +282,18 @@ export function registerIpc(runtime: Runtime): void {
     recipient: feeRecipient(),
     recipients: { evm: feeRecipient('evm'), utxo: feeRecipient('utxo'), solana: feeRecipient('solana'), tron: feeRecipient('tron') }
   }))
+
+  // ---- updates (allowed while locked: they touch no wallet data) -----------
+  handle('updates:status', () => runtime.updater.snapshot)
+  handle('updates:check', async () => {
+    await runtime.updater.check(false)
+    return runtime.updater.snapshot
+  })
+  handle('updates:install', () => runtime.updater.install(true))
+  handle('updates:setAuto', (on) => {
+    if (typeof on !== 'boolean') throw new InputError('Expected on or off.')
+    return runtime.updater.setAuto(on)
+  })
 
   handle('app:dismissUpgradeNotice', () => {
     prefs.setUpgradeNotice(null)
