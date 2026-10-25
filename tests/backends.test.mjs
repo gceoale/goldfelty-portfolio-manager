@@ -4,6 +4,10 @@ import { createServer } from 'node:http'
 import { readBalances, clearBalanceMemory } from '../src/main/backends/balances.ts'
 import { CHAIN_BY_ID, TOKENS } from '../src/shared/chains.ts'
 import { DEFAULT_SETTINGS } from '../src/main/settings.ts'
+import { useOnlyCustomEndpointsForTests } from '../src/main/rpc.ts'
+
+// Never the public APIs: CI can reach them, and the answers would vary.
+useOnlyCustomEndpointsForTests(true)
 
 /** One local server playing every chain's API, routed by path prefix. */
 let failNext = false
@@ -102,8 +106,8 @@ test('a failing API throws rather than reporting zero', async () => {
   clearBalanceMemory()
   failNext = true
   const only = { ...settings, customRpc: { [-1]: `${origin}/btc` } }
-  // The built-in endpoints are unreachable from tests, so every endpoint fails.
-  const chain = { ...CHAIN_BY_ID.get(-1), rpcUrls: [] }
+  // Only the local endpoint is tried, and it fails.
+  const chain = CHAIN_BY_ID.get(-1)
   await assert.rejects(readBalances(chain, 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', tokensOn(-1), only))
 })
 

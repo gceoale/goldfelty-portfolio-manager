@@ -14,6 +14,7 @@ import { Wallet as EthWallet } from 'ethers'
 import { base58Encode, base58CheckEncode, tronToHex20 } from '../src/main/addresses.ts'
 import { CHAIN_BY_ID, TOKENS } from '../src/shared/chains.ts'
 import { DEFAULT_SETTINGS } from '../src/main/settings.ts'
+import { useOnlyCustomEndpointsForTests } from '../src/main/rpc.ts'
 import { planBitcoin, finishBitcoin, broadcastBitcoin } from '../src/main/send/bitcoin.ts'
 import { planSolana, finishSolana, broadcastSolana, associatedTokenAddress } from '../src/main/send/solana.ts'
 import { buildTron, finishTron, broadcastTron, decodeTronRaw, checkTronTx } from '../src/main/send/tron.ts'
@@ -114,8 +115,9 @@ const SETTINGS = {
   priceProviderUrl: `${origin}/prices`,
   customRpc: { [-1]: `${origin}/btc`, [-501]: `${origin}/sol`, [-195]: `${origin}/tron` }
 }
-// Only the local server: the built-in public endpoints are unreachable from tests.
-const only = (chain) => ({ ...chain, rpcUrls: [] })
+// Only the local server, never the public APIs, which CI can reach.
+useOnlyCustomEndpointsForTests(true)
+const only = (chain) => chain
 
 /* ---- Bitcoin ---------------------------------------------------------------------------- */
 

@@ -13,10 +13,18 @@ const REQUEST_TIMEOUT_MS = 12_000
 const cooldown = new Map<string, number>()
 const COOLDOWN_MS = 60_000
 
+let customOnly = false
+
+/** For tests only: use just the custom endpoint, so nothing reaches the public networks. */
+export function useOnlyCustomEndpointsForTests(on: boolean): void {
+  customOnly = on
+}
+
 export function endpointsFor(chainId: number, settings: Settings): string[] {
   const chain = getChain(chainId)
   const custom = settings.customRpc?.[chainId]
-  const all = custom ? [custom, ...chain.rpcUrls] : [...chain.rpcUrls]
+  const builtIn = customOnly ? [] : chain.rpcUrls
+  const all = custom ? [custom, ...builtIn] : [...builtIn]
   const now = Date.now()
   const healthy = all.filter((url) => (cooldown.get(url) ?? 0) <= now)
   // If every endpoint is cooling down, try them all anyway rather than failing
