@@ -437,6 +437,12 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
     var s = $('status');
     s.textContent = want.name + ' isn’t showing up in this browser. If you just opened the browser or installed it, reload this tab. If it’s in a different browser, open the link from Goldfelty there instead.';
     s.className = 'status warn';
+    // Some wallets (Bitget, Ctrl) don't load into tabs opened while they are still starting up.
+    var again = el('button', null, 'Reload this tab');
+    again.type = 'button';
+    again.addEventListener('click', function () { location.reload(); });
+    s.appendChild(document.createTextNode(' '));
+    s.appendChild(again);
     if (typeof want.homepage === 'string' && /^https:\/\//.test(want.homepage)) {
       var a = el('a', null, 'Get ' + want.name);
       a.href = want.homepage;

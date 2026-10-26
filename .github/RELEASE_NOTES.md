@@ -1,3 +1,22 @@
+## Goldfelty 1.2.2
+
+**More wallets connect.** Every supported wallet was tested against its real
+browser extension, and this fixes what that turned up:
+
+- Zerion, Taho and Gate Wallet now connect. They only work on `localhost`
+  pages, so Goldfelty's browser tab now opens there.
+- Coinbase Wallet connects properly; the tab no longer blocks its own code.
+- Wallets that also act as a Tron or Bitcoin wallet connect those under their
+  own name: Trust Wallet, SafePal, Gate and Fordefi on Tron; Backpack and OneKey
+  on Bitcoin and Tron; TokenPocket on Bitcoin.
+- Bitget Wallet and Ctrl, which can be slow to start right after the browser
+  opens, are picked up when they're ready, and the tab has a Reload button.
+
+Accounts on goldfelty.com also link again; that was fixed on the server, for
+every version.
+
+If you have 1.2.0 or 1.2.1, the app updates itself to this version.
+
 ## Goldfelty 1.2.1
 
 **A new logo.** Goldfelty has a proper icon now: a serif G with a gold dot, on

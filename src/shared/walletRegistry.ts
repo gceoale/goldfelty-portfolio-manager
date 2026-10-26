@@ -82,7 +82,7 @@ export const WALLET_REGISTRY: RegistryWallet[] = [
   { id: 'tokenpocket', name: 'TokenPocket', rdns: ['pro.tokenpocket', 'https://www.tokenpocket.pro/en/download/app', 'sol:tokenpocket', 'btc:tokenpocket'], aliases: ['tokenpocket'], color: '#2980fe', homepage: 'https://www.tokenpocket.pro', families: ['evm', 'solana', 'utxo'] },
   { id: 'coin98', name: 'Coin98', rdns: ['coin98.com', 'sol:coin98'], aliases: ['coin98', 'coin98 wallet'], color: '#d9b432', homepage: 'https://coin98.com', families: ['evm', 'solana'] },
   { id: 'safepal', name: 'SafePal', rdns: ['app.safepal', 'https://www.safepal.com/download', 'sol:safepal', 'tron:safepal'], aliases: ['safepal'], color: '#4a21ef', homepage: 'https://www.safepal.com', families: ['evm', 'solana', 'tron'] },
-  { id: 'ctrl', name: 'Ctrl', rdns: ['io.xdefi', 'sol:ctrl-wallet'], aliases: ['ctrl', 'ctrl wallet', 'xdefi'], color: '#3e72f6', homepage: 'https://ctrl.xyz', families: ['evm', 'solana'] },
+  { id: 'ctrl', name: 'Ctrl', rdns: ['io.xdefi', 'sol:ctrl-wallet', 'tron:ctrl-wallet', 'tron:ctrl'], aliases: ['ctrl', 'ctrl wallet', 'xdefi'], color: '#3e72f6', homepage: 'https://ctrl.xyz', families: ['evm', 'solana', 'tron'] },
   { id: 'onekey', name: 'OneKey', rdns: ['so.onekey.app.wallet', 'sol:onekey', 'btc:onekey', 'tron:onekey'], aliases: ['onekey'], color: '#44d62c', homepage: 'https://onekey.so', families: ['evm', 'solana', 'utxo', 'tron'] },
   { id: 'magiceden', name: 'Magic Eden', rdns: ['io.magiceden.wallet', 'sol:magic-eden'], aliases: ['magic eden', 'magic eden wallet'], color: '#e42575', homepage: 'https://wallet.magiceden.io', families: ['evm', 'solana'] },
   { id: 'wigwam', name: 'Wigwam', rdns: ['com.wigwam.wallet'], aliases: ['wigwam'], color: '#80ef6e', homepage: 'https://wigwam.app' },
