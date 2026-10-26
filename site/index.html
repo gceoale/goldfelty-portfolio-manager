@@ -141,7 +141,7 @@
         <article>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z" /><path d="M9 12l2 2 4-4" /></svg>
           <h3>Checked twice</h3>
-          <p>Lookalike addresses are flagged, and every signed transaction is compared with what you reviewed before it’s sent.</p>
+          <p>Lookalike addresses are flagged, and what your wallet signs is checked against what you reviewed.</p>
         </article>
         <article>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M4 12h16M12 4c2.5 2.5 2.5 13.5 0 16M12 4c-2.5 2.5-2.5 13.5 0 16" /></svg>
@@ -278,9 +278,8 @@
           <code>gh attestation verify &lt;file&gt; --repo gceoale/goldfelty-portfolio-manager</code>.
         </p>
         <p>
-          Builds aren’t signed by Apple or Microsoft yet. On macOS, after moving the app to Applications, run
-          <code>xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"</code>. On Windows, choose
-          More info, then Run anyway.
+          Builds aren’t signed by Apple or Microsoft yet, so your computer may warn you the first time you open
+          Goldfelty. <a href="/security/">Is Goldfelty safe?</a> explains why, how to check a download, and how to open it.
         </p>
       </details>
     </div>
@@ -290,6 +289,15 @@
     <div class="wrap">
       <h2 class="section-title">Questions, <em>answered</em>.</h2>
       <div class="faq">
+        <details>
+          <summary>Is Goldfelty legit and safe?</summary>
+          <p>
+            Yes. Goldfelty is an open-source portfolio tracker, not a wallet. It never asks for your recovery phrase or
+            private keys, never asks you to approve token spending, and can’t move funds without your own wallet asking
+            you first. Every download is built from the public source code on GitHub and can be verified.
+            <a href="/security/">Is Goldfelty safe?</a> covers the details.
+          </p>
+        </details>
         <details>
           <summary>What is Goldfelty?</summary>
           <p>
@@ -371,6 +379,7 @@
     <a class="brand" href="/"><img class="mark" src="/mark.png" alt="" width="24" height="24" /> Goldfelty</a>
     <span class="links">
       <a href="#faq">FAQ</a>
+      <a href="/security/">Safety</a>
       <a href="/terms/">Terms</a>
       <a href="/privacy/">Privacy</a>
       <a href="https://github.com/gceoale/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md">Security review</a>

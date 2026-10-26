@@ -715,6 +715,64 @@ section {
   line-height: 1.6;
 }
 
+.mac-help {
+  width: min(540px, calc(100vw - 32px));
+  padding: 26px 26px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.mac-help::backdrop {
+  background: rgba(10, 9, 8, 0.45);
+}
+
+.mac-help h2 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.mac-help ol {
+  margin: 16px 0 0;
+  padding-left: 20px;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.mac-help li + li {
+  margin-top: 10px;
+}
+
+.mac-help .cmd {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mac-help .cmd code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.mac-help .foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 22px;
+  font-size: 14px;
+}
+
 .finale {
   position: relative;
   padding: 110px 0 120px;
