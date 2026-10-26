@@ -252,7 +252,10 @@ export async function handleRequest(db, request, now = Date.now(), options = {})
     })
   }
 
-  if (url.pathname === '/health') return json(200, { ok: true })
+  // The app calls everything under /v1, health included, so both must answer.
+  // Without /v1/health every app decides the service is down and keeps
+  // accounts local-only.
+  if (url.pathname === '/health' || url.pathname === '/v1/health') return json(200, { ok: true })
 
   if (url.pathname === '/v1/accounts/username-available' && request.method === 'GET') {
     const limited = await rateLimit(db, request, 'check', now)
