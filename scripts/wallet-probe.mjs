@@ -89,14 +89,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const withTimeout = (promise, ms, label) =>
   Promise.race([promise, sleep(ms).then(() => { throw Object.assign(new Error(`${label}: no answer in ${ms / 1000}s`), { code: 'PROBE_TIMEOUT' }) })])
 
+async function fetchCrx(storeId) {
+  let last = ''
+  // An empty answer can mean the item needs a newer Chrome, or isn't offered in this region.
+  for (const prod of ['134.0.0.0', '141.0.0.0', '120.0.0.0']) {
+    const url =
+      `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${prod}` +
+      `&acceptformat=crx2,crx3&x=id%3D${storeId}%26installsource%3Dondemand%26uc`
+    const res = await fetch(url, { redirect: 'follow' })
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (res.ok && buf.length >= 16 && buf.toString('latin1', 0, 4) === 'Cr24') return buf
+    last = `HTTP ${res.status}, ${buf.length} bytes`
+  }
+  throw new Error(`the Chrome Web Store wouldn't serve it (${last}); it may not be offered in the runner's region`)
+}
+
 async function download(storeId, dir) {
-  const url =
-    'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=134.0.0.0' +
-    `&acceptformat=crx2,crx3&x=id%3D${storeId}%26installsource%3Dondemand%26uc`
-  const res = await fetch(url, { redirect: 'follow' })
-  if (!res.ok) throw new Error(`Chrome Web Store answered ${res.status}`)
-  const buf = Buffer.from(await res.arrayBuffer())
-  if (buf.length < 16 || buf.toString('latin1', 0, 4) !== 'Cr24') throw new Error(`not a CRX (${buf.length} bytes)`)
+  const buf = await fetchCrx(storeId)
   const version = buf.readUInt32LE(4)
   // CRX3: magic, version, header length, header, zip. CRX2: magic, version, key length, sig length, key, sig, zip.
   const start = version === 3 ? 12 + buf.readUInt32LE(8) : 16 + buf.readUInt32LE(8) + buf.readUInt32LE(12)
@@ -113,7 +122,61 @@ async function download(storeId, dir) {
   // Chrome refuses to load an unpacked extension that keeps the store's signature folder.
   rmSync(join(unpacked, '_metadata'), { recursive: true, force: true })
   const manifest = JSON.parse(readFileSync(join(unpacked, 'manifest.json'), 'utf8'))
-  return { dir: unpacked, version: manifest.version, mv: manifest.manifest_version }
+  const injection = (manifest.content_scripts ?? []).map((c) => ({
+    matches: c.matches, exclude: c.exclude_matches, world: c.world ?? 'ISOLATED', allFrames: !!c.all_frames
+  }))
+  return { dir: unpacked, version: manifest.version, mv: manifest.manifest_version, injection, hosts: manifest.host_permissions ?? manifest.permissions?.filter((p) => /[:*]/.test(p)) ?? [] }
+}
+
+/** Objects wallets inject, and which "isX" flags each carries, so we can tell who injected it. */
+const GLOBALS = ['ethereum', 'solana', 'phantom', 'coinbaseSolana', 'coinbaseWalletExtension', 'okxwallet', 'bitkeep', 'tronLink', 'tronWeb', 'tron', 'unisat',
+  'XverseProviders', 'BitcoinProvider', 'LeatherProvider', '$onekey', 'zerionWallet', 'tally', 'taho', 'exodus', 'xfi', 'ctrl', 'zeal', 'trustwallet',
+  'backpack', 'coin98', 'safepal', 'tokenpocket', 'gatewallet', 'enkrypt', 'talismanEth', 'SubWallet', 'ronin', 'fordefi', 'ambire', 'magicEden', 'wigwamEthereum']
+
+function snapshotGlobals(names) {
+  const out = {}
+  for (const k of names) {
+    let v
+    try { v = window[k] } catch { continue }
+    if (v == null) continue
+    const flags = []
+    try { for (const p in v) if (/^is[A-Z]/.test(p) && v[p] === true) flags.push(p) } catch {}
+    out[k] = flags.slice(0, 10)
+  }
+  return out
+}
+
+/** What a plain page (no Goldfelty code, no CSP) sees: EIP-6963, the Wallet Standard and globals. */
+async function plainDetect(names) {
+  const found = { eip6963: [], standard: [] }
+  window.addEventListener('eip6963:announceProvider', (e) => {
+    try { found.eip6963.push(`${e.detail.info.rdns} (${e.detail.info.name})`) } catch {}
+  })
+  window.dispatchEvent(new Event('eip6963:requestProvider'))
+  const api = { register: (...ws) => { for (const w of ws) found.standard.push(String(w && w.name)); return () => {} } }
+  window.addEventListener('wallet-standard:register-wallet', (e) => { try { e.detail(api) } catch {} })
+  try { window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: api })) } catch {}
+  await new Promise((r) => setTimeout(r, 3000))
+  found.eip6963 = [...new Set(found.eip6963)]
+  found.standard = [...new Set(found.standard)]
+  found.globals = {}
+  for (const k of names) {
+    let v
+    try { v = window[k] } catch { continue }
+    if (v != null) found.globals[k] = true
+  }
+  return found
+}
+
+let blank = null
+async function blankServer() {
+  if (blank) return blank
+  const { createServer } = await import('node:http')
+  const server = createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>blank</title><p>blank</p>') })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  server.unref()
+  blank = server.address().port
+  return blank
 }
 
 function describe(value) {
@@ -175,6 +238,24 @@ async function probe(entry, extDirs) {
     const mine = detected.filter((d) => d.providerId === entry.id)
     result.matchedFamilies = [...new Set(mine.map((d) => d.family))]
     result.missingFamilies = result.expectedFamilies.filter((f) => !result.matchedFamilies.includes(f))
+    result.globals = await page.evaluate(snapshotGlobals, GLOBALS).catch((e) => ({ error: String(e.message) }))
+
+    // Not (fully) found: is it our page, the 127.0.0.1 host, or http itself?
+    if (result.missingFamilies.length) {
+      const port = await blankServer()
+      result.compare = {}
+      for (const [label, url] of [['http://127.0.0.1 (plain page)', `http://127.0.0.1:${port}/`], ['http://localhost (plain page)', `http://localhost:${port}/`], ['https://example.com', 'https://example.com/']]) {
+        const other = await ctx.newPage()
+        try {
+          await other.goto(url, { waitUntil: 'load', timeout: 20_000 })
+          await sleep(2500)
+          result.compare[label] = await other.evaluate(plainDetect, GLOBALS)
+        } catch (error) {
+          result.compare[label] = { error: String(error.message).slice(0, 160) }
+        }
+        await other.close().catch(() => {})
+      }
+    }
 
     for (const d of mine) {
       if (d.family === 'evm') {
@@ -202,9 +283,12 @@ async function probe(entry, extDirs) {
         const url = first.page.url()
         outcome = { rdns: d.rdns, method, ok: true, value: `wallet opened ${url.replace(/^(chrome-extension:\/\/[a-p]{32}).*$/, '$1/…')}` }
       } else if (first?.kind === 'answer') {
-        // Some wallets open a window and also reject at once (not set up yet).
+        // A wallet that answers, even "not set up yet", got the request: on a
+        // fresh install that is the right answer. Only silence, or the bridge
+        // itself failing, means the request didn't reach it.
         const opened = ctx.pages().filter((p) => !before.has(p))
-        outcome = { rdns: d.rdns, method, ok: first.ok || opened.length > 0, value: first.value + (opened.length ? ' (and opened a window)' : '') }
+        const bridgeFailure = /did not answer|isn’t in this browser|is not in this browser|can’t do that|tab is closed/i.test(first.value)
+        outcome = { rdns: d.rdns, method, ok: first.ok || opened.length > 0 || !bridgeFailure, answered: !first.ok, value: first.value + (opened.length ? ' (and opened a window)' : '') }
       } else {
         const opened = ctx.pages().filter((p) => !before.has(p))
         outcome = { rdns: d.rdns, method, ok: opened.length > 0, value: opened.length ? 'wallet opened a window' : 'no answer and no window' }
@@ -248,6 +332,18 @@ function markdown(results) {
       `| ${r.name} | ${r.version ?? '–'} | **${r.verdict}** | ${announced} | ${r.missingFamilies.join(', ') || '–'} | ${connect.replace(/\|/g, '\\|')} | ${r.cspViolations.length ? `${r.cspViolations.length} blocked` : '–'} |`
     )
   }
+  const odd = results.filter((r) => r.compare || (r.verdict !== 'works' && r.verdict !== 'built into its browser'))
+  if (odd.length) {
+    lines.push('', '### Diagnostics', '')
+    for (const r of odd) {
+      lines.push(`**${r.name}** (${r.verdict})`, '')
+      if (r.injection) lines.push(`- content scripts: ${JSON.stringify(r.injection).slice(0, 400)}`)
+      if (r.globals) lines.push(`- globals on the bridge page: ${JSON.stringify(r.globals).slice(0, 400)}`)
+      for (const [label, c] of Object.entries(r.compare ?? {})) lines.push(`- ${label}: ${JSON.stringify(c).slice(0, 400)}`)
+      if (r.error) lines.push(`- error: ${r.error}`)
+      lines.push('')
+    }
+  }
   const csp = results.filter((r) => r.cspViolations.length)
   if (csp.length) {
     lines.push('', '### CSP violations', '')
@@ -284,6 +380,8 @@ for (const entry of entries) {
     id: entry.id, name: entry.name, verdict: 'error', error: error.message, announced: [], missingFamilies: [], requests: [], cspViolations: []
   }))
   r.version = ext.version
+  r.injection = ext.injection
+  r.hosts = ext.hosts
   results.push(r)
   console.log(`${entry.name} ${ext.version}: ${r.verdict}  ${r.announced?.map((a) => a.rdns).join(', ') ?? ''}`)
   rmSync(work, { recursive: true, force: true })

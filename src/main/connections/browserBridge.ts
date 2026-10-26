@@ -105,13 +105,23 @@ function cspHash(page: string, tag: 'script' | 'style'): string {
 }
 
 /** Pinned once at startup from the page string itself. */
+// Only scripts are locked to this page's own, by hash: that is what keeps
+// anything else from running here. (Extensions' own scripts aren't bound by a
+// page's CSP.) The rest is loose on purpose. Wallet extensions run their
+// in-page code in this tab, and it needs to reach its own servers and draw its
+// own UI: Coinbase Wallet, for one, opens wss://www.walletlink.org and adds
+// inline styles, and couldn't connect while those were blocked. The page holds
+// no secret a script could read (the session is an HttpOnly cookie), so these
+// cost nothing.
 const PAGE_CSP = [
   "default-src 'none'",
   `script-src ${cspHash(BRIDGE_PAGE, 'script')}`,
-  `style-src ${cspHash(BRIDGE_PAGE, 'style')}`,
-  // Wallet icons arrive as data: URIs through EIP-6963.
-  'img-src data:',
-  "connect-src 'self'",
+  "style-src 'unsafe-inline'",
+  // Wallet icons arrive as data: URIs through EIP-6963; wallets' own UI may load more.
+  'img-src data: https:',
+  'font-src data: https:',
+  "connect-src 'self' https: wss:",
+  'frame-src https:',
   "base-uri 'none'",
   "form-action 'none'",
   "frame-ancestors 'none'"
