@@ -106,12 +106,24 @@ jobs:
         if: steps.creds.outputs.ready == 'true'
         # A new custom domain can take a minute or two for its certificate.
         run: |
+          up=false
           for i in $(seq 1 18); do
-            if curl -fsS https://api.goldfelty.com/health | grep -q '"ok":true'; then
-              echo "api.goldfelty.com is up." | tee -a "$GITHUB_STEP_SUMMARY"
+            if curl -fsS https://api.goldfelty.com/health | grep -q '"ok":true'; then up=true; break; fi
+            sleep 10
+          done
+          if [ "$up" != true ]; then
+            echo "Deployed, but api.goldfelty.com did not answer within 3 minutes. Check the custom domain in Cloudflare." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          # The exact requests the app makes before it will link an account.
+          # A new Worker version can take a few seconds to reach every edge.
+          for i in $(seq 1 12); do
+            if curl -fsS https://api.goldfelty.com/v1/health | grep -q '"ok":true' &&
+               curl -fsS 'https://api.goldfelty.com/v1/accounts/username-available?username=deploycheck' | grep -q '"available"'; then
+              echo "api.goldfelty.com is up and answers the app's account requests." | tee -a "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 10
           done
-          echo "Deployed, but api.goldfelty.com did not answer within 3 minutes. Check the custom domain in Cloudflare." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "api.goldfelty.com is up, but /v1/health or the username check failed. The app will treat the service as offline." | tee -a "$GITHUB_STEP_SUMMARY"
           exit 1

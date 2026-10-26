@@ -168,6 +168,10 @@ test('handles malformed bodies and unknown routes', async () => {
   assert.equal(missing.status, 404)
   const health = await handleRequest(db, new Request('https://api.goldfelty.com/health'))
   assert.equal(health.status, 200)
+  // The app checks health under its /v1 base; without this every account stays local.
+  const appHealth = await handleRequest(db, new Request('https://api.goldfelty.com/v1/health'))
+  assert.equal(appHealth.status, 200)
+  assert.deepEqual(await appHealth.json(), { ok: true })
 })
 
 test('answers CORS preflight for the site only', async () => {

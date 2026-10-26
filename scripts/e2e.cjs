@@ -184,7 +184,9 @@ async function startMocks() {
     const body = Buffer.concat(chunks).toString()
 
     if (req.url.startsWith('/v1') || req.url === '/health') {
-      const url = 'https://api.goldfelty.com' + req.url.replace(/^\/v1\/health/, '/health')
+      // Paths go through exactly as the app sends them, so a route the app uses
+      // but the Worker lacks fails here rather than in production.
+      const url = 'https://api.goldfelty.com' + req.url
       const response = await handleRequest(
         db,
         new Request(url, { method: req.method, headers: req.headers, body: req.method === 'GET' || req.method === 'HEAD' ? undefined : body }),

@@ -246,3 +246,57 @@ test('sign-up keeps the reporting token out of what the account holds', async (t
   assert.equal(result.token, 'A'.repeat(43))
   assert.equal(JSON.stringify(result.account).includes('AAAA'), false)
 })
+
+test('the app and the real account Worker agree on every route', async (t) => {
+  // The Worker's own request handler, behind a local server, with an in-memory
+  // database. The fakes above can drift from the Worker; this can't.
+  const { handleRequest } = await import('../api/src/accounts.js')
+  const accounts = []
+  const tokens = new Map()
+  const reports = new Map()
+  const db = {
+    findByUsername: async (u) => accounts.find((a) => a.username === u) ?? null,
+    findByAddress: async (a) => accounts.find((x) => x.address === a) ?? null,
+    insert: async ({ username, email, address }) => {
+      const account = { id: `gf_${crypto.randomUUID()}`, username, email, address }
+      accounts.push(account)
+      return account
+    },
+    setToken: async (id, hash) => void tokens.set(hash, id),
+    findByTokenHash: async (hash) => accounts.find((a) => a.id === tokens.get(hash)) ?? null,
+    upsertReport: async (id, r) => void reports.set(id, r),
+    deleteReport: async (id) => void reports.delete(id)
+  }
+  const api = await mockApi(t, async (req, res) => {
+    const chunks = []
+    for await (const c of req) chunks.push(c)
+    const body = Buffer.concat(chunks).toString()
+    const response = await handleRequest(
+      db,
+      new Request(`https://api.goldfelty.com${req.url}`, {
+        method: req.method,
+        headers: req.headers,
+        body: req.method === 'GET' || req.method === 'DELETE' ? undefined : body
+      })
+    )
+    res.writeHead(response.status, Object.fromEntries(response.headers))
+    res.end(Buffer.from(await response.arrayBuffer()))
+  })
+  const client = await loadClient(api)
+
+  assert.equal((await client.apiStatus()).reachable, true, 'the health check the app makes must succeed')
+  assert.deepEqual(await client.checkUsername('nora'), { available: true, offline: false, reason: undefined })
+
+  const wallet = EthersWallet.createRandom()
+  const result = await client.registerAccount({ username: 'nora', email: 'nora@example.com' }, signerFor(wallet))
+  assert.equal(result.linked, true, result.message)
+  assert.match(result.account.goldfeltyId, /^gf_/)
+  assert.equal(accounts.length, 1)
+  assert.equal(accounts[0].address, wallet.address)
+  assert.equal((await client.checkUsername('nora')).available, false)
+
+  await client.reportTotals(result.token, { value: 10, currency: 'USD', wallets: 1 })
+  assert.equal(reports.get(accounts[0].id).value, 10)
+  await client.withdrawTotals(result.token)
+  assert.equal(reports.size, 0)
+})
