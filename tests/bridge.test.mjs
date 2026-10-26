@@ -63,6 +63,25 @@ test('the page and API need the session cookie', async (t) => {
   assert.equal(page.text, BRIDGE_PAGE)
 })
 
+test('the page is opened at localhost, which some wallets need, and 127.0.0.1 still works', async (t) => {
+  // Zerion, Taho and Gate Wallet only inject into http://localhost pages.
+  const bridge = await started(t)
+  assert.match(bridge.origin, /^http:\/\/localhost:\d+$/)
+  assert.match(bridge.issueLink(), /^http:\/\/localhost:\d+\/open\?t=/)
+  const cookie = await session(bridge)
+  const port = new URL(bridge.origin).port
+  const viaIp = await http(bridge.origin, '/', { headers: { cookie, host: `127.0.0.1:${port}` } })
+  assert.equal(viaIp.status, 200)
+  const ipOrigin = await http(bridge.origin, '/api/hello', {
+    method: 'POST',
+    headers: json(cookie, { origin: `http://127.0.0.1:${port}` }),
+    body: { pageId: 'page-0002', providers: [] }
+  })
+  assert.equal(ipOrigin.status, 200)
+  const otherPort = await http(bridge.origin, '/', { headers: { cookie, host: `localhost:${Number(port) + 1}` } })
+  assert.equal(otherPort.status, 403)
+})
+
 test('DNS rebinding and cross-site requests are refused even with the cookie', async (t) => {
   const bridge = await started(t)
   const cookie = await session(bridge)
@@ -90,7 +109,7 @@ test('POSTs must be JSON, which a cross-site form cannot send', async (t) => {
   assert.equal(form.status, 415)
 })
 
-test('the page is locked down: hashed script and style, no framing, no sniffing', async (t) => {
+test('the page is locked down: hashed script, no framing, no sniffing', async (t) => {
   const bridge = await started(t)
   const cookie = await session(bridge)
   const page = await http(bridge.origin, '/', { headers: { cookie } })
@@ -98,7 +117,12 @@ test('the page is locked down: hashed script and style, no framing, no sniffing'
   const script = BRIDGE_PAGE.slice(BRIDGE_PAGE.indexOf('<script>') + 8, BRIDGE_PAGE.indexOf('</script>'))
   const hash = createHash('sha256').update(script).digest('base64')
   assert.ok(csp.includes(`'sha256-${hash}'`), 'the exact inline script is pinned')
-  assert.ok(!csp.includes('unsafe-inline'))
+  // Scripts are what matter: only this page's own may run. Styles and network
+  // are open so wallets' in-page code can work (Coinbase Wallet needs both).
+  const scriptSrc = csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('script-src'))
+  assert.equal(scriptSrc, `script-src 'sha256-${hash}'`)
+  assert.match(csp, /default-src 'none'/)
+  assert.match(csp, /connect-src 'self' https: wss:/)
   assert.match(csp, /frame-ancestors 'none'/)
   assert.equal(page.headers['x-frame-options'], 'DENY')
   assert.equal(page.headers['x-content-type-options'], 'nosniff')

@@ -1,0 +1,56 @@
+name: Wallet connection probe
+
+# Loads every wallet in the registry, as the real Chrome extension, into
+# Chromium with Goldfelty's bridge page, and checks each one is found and
+# answers a connect request. Wallets change their code without telling
+# anyone, so this also runs weekly. Results are in the run summary and the
+# wallet-probe artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      wallets:
+        description: 'Registry ids to check, space-separated (blank for all)'
+        required: false
+        type: string
+  schedule:
+    - cron: '17 6 * * 1'
+  push:
+    branches: ['claude/**']
+    paths:
+      - 'scripts/wallet-probe.mjs'
+      - '.github/workflows/wallet-probe.yml'
+      - 'src/main/connections/**'
+      - 'src/shared/walletRegistry.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wallet-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: Probe every wallet
+        env:
+          WALLETS: ${{ inputs.wallets }}
+        # WALLETS is split into ids on purpose; the script ignores anything that isn't one.
+        run: xvfb-run -a node scripts/wallet-probe.mjs $WALLETS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wallet-probe
+          path: release/wallet-probe
+          retention-days: 14

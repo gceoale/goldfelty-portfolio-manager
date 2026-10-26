@@ -5,7 +5,7 @@
  * themselves through EIP-6963. It reports what it finds to the app, then
  * long-polls for requests and hands each one to the wallet it names.
  *
- * It talks to nothing but the bridge on 127.0.0.1 and the wallets in this
+ * It talks to nothing but the bridge on loopback and the wallets in this
  * browser. It holds no secret and reads nothing from its own URL: the app
  * authenticates it with an HttpOnly cookie set when the one-time link is
  * opened, and tells it which wallet is wanted over the same channel.
@@ -276,9 +276,9 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
       }
     });
   }
-  function xverse(p) {
-    if (!p || typeof p.request !== 'function' || providers['btc:xverse']) return;
-    adapter('btc:xverse', 'Xverse', null, {
+  function xverse(key, name, p) {
+    if (!p || typeof p.request !== 'function' || providers[key]) return;
+    adapter(key, name, null, {
       gf_connect: function () {
         return Promise.resolve(p.request('getAddresses', { purposes: ['payment'], message: 'Goldfelty will show this address’s balance.' }))
           .then(rpcResult, function () { return Promise.resolve(p.request('getAccounts', { purposes: ['payment'] })).then(rpcResult); })
@@ -312,10 +312,11 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
     });
   }
 
-  // Tron: TronLink and the wallets that copy its API.
-  function tronStyle(key, name, t) {
+  // Tron: TronLink and the wallets that copy its API. useGlobalWeb: the
+  // object came from window.tronLink, so window.tronWeb is the same wallet's.
+  function tronStyle(key, name, t, useGlobalWeb) {
     if (!t || providers[key]) return;
-    var web = function () { return t.tronWeb || (key === 'tron:tronlink' && window.tronWeb) || null; };
+    var web = function () { return t.tronWeb || (useGlobalWeb && window.tronWeb) || null; };
     if (typeof t.request !== 'function' && !web()) return;
     adapter(key, name, null, {
       gf_connect: function () {
@@ -339,20 +340,84 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
     });
   }
 
-  function scanOtherChains() {
-    unisatStyle('btc:unisat', 'UniSat', window.unisat);
+  /* Many wallets also fill in window.tronLink, window.unisat or
+   * window.BitcoinProvider so sites built for TronLink, UniSat or Xverse work
+   * with them. Most mark the object with their own flag; those are filed under
+   * the wallet that put them there, not the one they imitate. (Seen on the
+   * real extensions; see scripts/wallet-probe.mjs.) */
+  var OWNER_FLAGS = [
+    ['isOneKey', 'onekey', 'OneKey'], ['isFordefi', 'fordefi', 'Fordefi'], ['isTokenPocket', 'tokenpocket', 'TokenPocket'],
+    ['isBackpackBitcoinWallet', 'backpack', 'Backpack'], ['isBackpack', 'backpack', 'Backpack'], ['isMagicEden', 'magic-eden', 'Magic Eden'],
+    ['isTrust', 'trust', 'Trust Wallet'], ['isTrustWallet', 'trust', 'Trust Wallet'], ['isOKExWallet', 'okx', 'OKX Wallet'],
+    ['isOkxWallet', 'okx', 'OKX Wallet'], ['isBitKeep', 'bitget', 'Bitget Wallet'], ['isGateWallet', 'gate', 'Gate Wallet'],
+    ['isSafePal', 'safepal', 'SafePal'], ['isCtrl', 'ctrl', 'Ctrl'], ['isXDEFI', 'ctrl', 'Ctrl'], ['isCoin98', 'coin98', 'Coin98']
+  ];
+  function ownerOf(obj) {
+    if (!obj) return null;
+    for (var i = 0; i < OWNER_FLAGS.length; i++) {
+      try { if (obj[OWNER_FLAGS[i][0]] === true) return { slug: OWNER_FLAGS[i][1], name: OWNER_FLAGS[i][2] }; } catch (e) {}
+    }
+    return null;
+  }
+  function hasFamilyFor(prefix, name) {
+    return Object.keys(providers).some(function (k) { return k.indexOf(prefix) === 0 && providers[k].info.name === name; });
+  }
+  // The one EVM wallet in this browser, if there is exactly one.
+  function soleEvmWallet() {
+    var keys = Object.keys(providers).filter(function (k) { return !/^(sol|btc|tron):/.test(k) && k !== 'injected'; });
+    return keys.length === 1 ? providers[keys[0]].info : null;
+  }
+
+  function scanOtherChains(final) {
+    // Wallets' own namespaces first, so they keep their own keys.
     unisatStyle('btc:okx', 'OKX Wallet', window.okxwallet && window.okxwallet.bitcoin);
     unisatStyle('btc:bitget', 'Bitget Wallet', window.bitkeep && window.bitkeep.unisat);
     unisatStyle('btc:onekey', 'OneKey', window.$onekey && window.$onekey.btc);
-    xverse((window.XverseProviders && window.XverseProviders.BitcoinProvider) || window.BitcoinProvider);
-    leather(window.LeatherProvider);
-    tronStyle('tron:tronlink', 'TronLink', window.tronLink || window.tron);
     tronStyle('tron:okx', 'OKX Wallet', window.okxwallet && window.okxwallet.tronLink);
     tronStyle('tron:bitget', 'Bitget Wallet', window.bitkeep && window.bitkeep.tronLink);
+    leather(window.LeatherProvider);
+
+    // window.unisat: UniSat's, unless another wallet's flag says otherwise.
+    var u = window.unisat, uo = ownerOf(u);
+    if (u && !(uo && hasFamilyFor('btc:', uo.name))) unisatStyle(uo ? 'btc:' + uo.slug : 'btc:unisat', uo ? uo.name : 'UniSat', u);
+
+    // Xverse's own namespace, else window.BitcoinProvider, which others imitate.
+    if (window.XverseProviders && window.XverseProviders.BitcoinProvider) xverse('btc:xverse', 'Xverse', window.XverseProviders.BitcoinProvider);
+    var bp = window.BitcoinProvider, bo = ownerOf(bp);
+    if (bp && bp !== (window.XverseProviders && window.XverseProviders.BitcoinProvider) && !(bo && hasFamilyFor('btc:', bo.name))) {
+      xverse(bo ? 'btc:' + bo.slug : 'btc:xverse', bo ? bo.name : 'Xverse', bp);
+    }
+
+    // window.tronLink: by its flag; else, since the real TronLink always
+    // announces itself (org.tronlink.www), an unmarked one with TronLink
+    // absent belongs to the only other wallet here, if there is just one.
+    var t = window.tronLink || window.tron, to = ownerOf(t) || ownerOf(window.tron);
+    if (t) {
+      var owner = to;
+      if (!owner && !providers['org.tronlink.www']) {
+        // Only once every wallet has had time to announce itself.
+        if (!final) return;
+        var sole = soleEvmWallet();
+        if (sole) owner = { slug: slug(sole.name), name: sole.name };
+      }
+      if (!(owner && hasFamilyFor('tron:', owner.name))) tronStyle(owner ? 'tron:' + owner.slug : 'tron:tronlink', owner ? owner.name : 'TronLink', t, true);
+    }
   }
   // Some extensions inject late; look twice.
-  setTimeout(scanOtherChains, 600);
-  setTimeout(scanOtherChains, 2500);
+  setTimeout(function () { scanOtherChains(false); }, 600);
+  setTimeout(function () { scanOtherChains(true); }, 2500);
+
+  // Some wallets are slow to start, right after the browser opens or the
+  // wallet is installed. Ask everyone again a few times, and when the tab is
+  // looked at; anything already found is ignored.
+  function rescan() {
+    try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: standardApi })); } catch (e) {}
+    scanOtherChains(true);
+    checkWanted();
+  }
+  [5000, 10000, 20000].forEach(function (ms) { setTimeout(rescan, ms); });
+  window.addEventListener('focus', rescan);
 
   // What the app is waiting for comes from the app, never from the URL.
   function loadWant() {
@@ -370,8 +435,14 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
       return;
     }
     var s = $('status');
-    s.textContent = want.name + ' isn’t installed in this browser. If it’s in a different browser, open the link from Goldfelty there instead.';
+    s.textContent = want.name + ' isn’t showing up in this browser. If you just opened the browser or installed it, reload this tab. If it’s in a different browser, open the link from Goldfelty there instead.';
     s.className = 'status warn';
+    // Some wallets (Bitget, Ctrl) don't load into tabs opened while they are still starting up.
+    var again = el('button', null, 'Reload this tab');
+    again.type = 'button';
+    again.addEventListener('click', function () { location.reload(); });
+    s.appendChild(document.createTextNode(' '));
+    s.appendChild(again);
     if (typeof want.homepage === 'string' && /^https:\/\//.test(want.homepage)) {
       var a = el('a', null, 'Get ' + want.name);
       a.href = want.homepage;

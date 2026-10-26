@@ -19,9 +19,10 @@ every transfer and signature.
 Coinbase Wallet, Phantom, Brave Wallet, Trust Wallet, OKX Wallet, Rainbow,
 Zerion, Frame Companion, Taho, Enkrypt, Exodus Web3 Wallet, Backpack, Bitget Wallet,
 Uniswap Extension, Core, Talisman, SubWallet, Ronin Wallet, TokenPocket,
-Coin98, SafePal, Ctrl, OneKey, Magic Eden, Wigwam, Fordefi, Zeal, Ambire, Gate
+Coin98, SafePal, Ctrl, OneKey, Magic Eden, Wigwam, Fordefi, Ambire, Gate
 Wallet, Opera Wallet and Crypto.com Onchain. Any other extension that announces
-itself with EIP-6963 shows up too.
+itself with EIP-6963 shows up too. Each is checked against its real extension
+every week; [docs/WALLETS.md](docs/WALLETS.md) has the latest results.
 
 **Bitcoin, Solana and Tron wallets** in the browser: UniSat, Xverse, Leather,
 OKX, Bitget and OneKey for Bitcoin; any wallet that supports the Solana Wallet

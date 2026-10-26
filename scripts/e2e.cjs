@@ -482,7 +482,8 @@ function makeWalletBackend() {
   step('open the browser tab with the fake wallet')
   await page.evaluate(() => window.goldfelty.connections.copyBridgeLink())
   const link = await app.evaluate(({ clipboard }) => clipboard.readText())
-  assert.match(link, /^http:\/\/127\.0\.0\.1:\d+\/open\?t=/)
+  // localhost, not 127.0.0.1: some wallets only inject into localhost pages.
+  assert.match(link, /^http:\/\/localhost:\d+\/open\?t=/)
   const browser = await pw.chromium.launch()
   const context = await browser.newContext()
   const backend = makeWalletBackend()

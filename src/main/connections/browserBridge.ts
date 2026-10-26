@@ -27,14 +27,17 @@ export function familyOfKey(key: string): ChainFamily {
  * side by side, with no relay service and no SDK in between.
  *
  * Security:
- * - Bound to 127.0.0.1 only. Never a reachable interface.
+ * - Bound to 127.0.0.1 only. Never a reachable interface. The page is opened
+ *   as http://localhost:<port>, though: Zerion, Taho and Gate Wallet only
+ *   inject into localhost pages, not 127.0.0.1 ones (found by loading the real
+ *   extensions; see scripts/wallet-probe.mjs).
  * - The app opens a one-time link (/open?t=...). Opening it swaps the ticket
  *   for a random session secret in an HttpOnly, SameSite=Strict cookie and
  *   redirects to a clean URL. Browser history therefore only ever holds a
  *   used ticket, which grants nothing. Tickets expire after ten minutes.
  * - Every other request needs that cookie, compared in constant time.
- * - The Host header must be 127.0.0.1:<port>, which defeats DNS rebinding,
- *   and any Origin other than the bridge's own is refused.
+ * - The Host header must be localhost:<port> or 127.0.0.1:<port>, which
+ *   defeats DNS rebinding, and any Origin other than those is refused.
  * - POSTs must be application/json, which a cross-site form cannot send.
  * - The page's script and style are pinned by SHA-256 in its CSP, it may not
  *   be framed, and bodies over 1 MB are refused.
@@ -105,19 +108,29 @@ function cspHash(page: string, tag: 'script' | 'style'): string {
 }
 
 /** Pinned once at startup from the page string itself. */
-const PAGE_CSP = [
+// Only scripts are locked to this page's own, by hash: that is what keeps
+// anything else from running here. (Extensions' own scripts aren't bound by a
+// page's CSP.) The rest is loose on purpose. Wallet extensions run their
+// in-page code in this tab, and it needs to reach its own servers and draw its
+// own UI: Coinbase Wallet, for one, opens wss://www.walletlink.org and adds
+// inline styles, and couldn't connect while those were blocked. The page holds
+// no secret a script could read (the session is an HttpOnly cookie), so these
+// cost nothing.
+export const PAGE_CSP = [
   "default-src 'none'",
   `script-src ${cspHash(BRIDGE_PAGE, 'script')}`,
-  `style-src ${cspHash(BRIDGE_PAGE, 'style')}`,
-  // Wallet icons arrive as data: URIs through EIP-6963.
-  'img-src data:',
-  "connect-src 'self'",
+  "style-src 'unsafe-inline'",
+  // Wallet icons arrive as data: URIs through EIP-6963; wallets' own UI may load more.
+  'img-src data: https:',
+  'font-src data: https:',
+  "connect-src 'self' https: wss:",
+  'frame-src https:',
   "base-uri 'none'",
   "form-action 'none'",
   "frame-ancestors 'none'"
 ].join('; ')
 
-const SECURITY_HEADERS = {
+export const SECURITY_HEADERS = {
   'cache-control': 'no-store',
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
@@ -161,7 +174,7 @@ export class BrowserBridge {
   }
 
   get origin(): string | null {
-    return this.server ? `http://127.0.0.1:${this.port}` : null
+    return this.server ? `http://localhost:${this.port}` : null
   }
 
   /**
@@ -282,9 +295,11 @@ export class BrowserBridge {
         const found = find()
         if (found) return done(found)
         // A tab is open and has finished announcing, but not this wallet:
-        // give stragglers a moment, then say it is not installed there.
+        // give stragglers a moment, then say it is not installed there. The
+        // page asks again at 5 s, and some wallets (Bitget, Ctrl) are slow
+        // right after the browser starts, so wait past that.
         if (this.pages.size > 0 && !missingTimer) {
-          missingTimer = setTimeout(() => (find() ? done(find()!) : done('missing')), 2_500)
+          missingTimer = setTimeout(() => (find() ? done(find()!) : done('missing')), 6_000)
         }
       })
       const overall = setTimeout(() => done(null), timeoutMs)
@@ -343,9 +358,10 @@ export class BrowserBridge {
 
   /** Host and Origin checks, which every request must pass. */
   private sameOrigin(req: IncomingMessage): boolean {
-    if (req.headers.host !== `127.0.0.1:${this.port}`) return false
+    const hosts = [`localhost:${this.port}`, `127.0.0.1:${this.port}`]
+    if (!hosts.includes(String(req.headers.host))) return false
     const origin = req.headers.origin
-    if (origin !== undefined && origin !== this.origin) return false
+    if (origin !== undefined && !hosts.some((h) => origin === `http://${h}`)) return false
     // Browsers that send Fetch Metadata say outright when a request is cross-site.
     const site = req.headers['sec-fetch-site']
     if (site !== undefined && site !== 'same-origin' && site !== 'none') return false
@@ -371,7 +387,7 @@ export class BrowserBridge {
     }
 
     if (!this.sameOrigin(req)) return send(403, { error: 'Forbidden' })
-    const url = new URL(req.url ?? '/', this.origin ?? 'http://127.0.0.1')
+    const url = new URL(req.url ?? '/', this.origin ?? 'http://localhost')
 
     // The one-time link: swap the ticket for the session cookie, then
     // redirect so the ticket does not stay in the address bar.
