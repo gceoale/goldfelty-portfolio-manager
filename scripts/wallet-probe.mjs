@@ -28,7 +28,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { BrowserBridge } from '../src/main/connections/browserBridge.ts'
+import { BrowserBridge, PAGE_CSP, SECURITY_HEADERS } from '../src/main/connections/browserBridge.ts'
 import { WALLET_REGISTRY } from '../src/shared/walletRegistry.ts'
 
 const require = createRequire(import.meta.url)
@@ -73,7 +73,6 @@ const STORE_IDS = {
   magiceden: 'mkpegjkblkkefacfnmkajcjmabijhclg',
   wigwam: 'lccbohhgfkdikahanoclbdmaolidjdfl',
   fordefi: 'hcmehenccjdmfbojapcbcofkgdpbnlle',
-  zeal: 'heamnjbnflcikcggoiplibfommfbkjpj',
   ambire: 'ehgjhhccekdedpbkifaojjaefeohnoea',
   gate: 'cpmkedoipcpimgecpmgpldfpohjplkpp',
   opera: null,
@@ -172,7 +171,13 @@ let blank = null
 async function blankServer() {
   if (blank) return blank
   const { createServer } = await import('node:http')
-  const server = createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>blank</title><p>blank</p>') })
+  // /csp carries the bridge page's CSP and nothing else; /headers its other
+  // security headers without the CSP. Comparing the two finds what stops a wallet.
+  const server = createServer((req, res) => {
+    const extra = req.url.startsWith('/csp') ? { 'content-security-policy': PAGE_CSP } : req.url.startsWith('/headers') ? SECURITY_HEADERS : {}
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...extra })
+    res.end('<!doctype html><title>blank</title><p>blank</p>')
+  })
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
   server.unref()
   blank = server.address().port
@@ -244,7 +249,13 @@ async function probe(entry, extDirs) {
     if (result.missingFamilies.length) {
       const port = await blankServer()
       result.compare = {}
-      for (const [label, url] of [['http://127.0.0.1 (plain page)', `http://127.0.0.1:${port}/`], ['http://localhost (plain page)', `http://localhost:${port}/`], ['https://example.com', 'https://example.com/']]) {
+      for (const [label, url] of [
+        ['http://localhost (plain page)', `http://localhost:${port}/`],
+        ['http://localhost + bridge CSP only', `http://localhost:${port}/csp`],
+        ['http://localhost + bridge security headers, no CSP', `http://localhost:${port}/headers`],
+        ['http://127.0.0.1 (plain page)', `http://127.0.0.1:${port}/`],
+        ['https://example.com', 'https://example.com/']
+      ]) {
         const other = await ctx.newPage()
         try {
           await other.goto(url, { waitUntil: 'load', timeout: 20_000 })
@@ -331,6 +342,11 @@ function markdown(results) {
     lines.push(
       `| ${r.name} | ${r.version ?? '–'} | **${r.verdict}** | ${announced} | ${r.missingFamilies.join(', ') || '–'} | ${connect.replace(/\|/g, '\\|')} | ${r.cspViolations.length ? `${r.cspViolations.length} blocked` : '–'} |`
     )
+  }
+  lines.push('', '### Injected objects on the bridge page', '', '| Wallet | Objects and their is… flags |', '| --- | --- |')
+  for (const r of results) {
+    if (!r.globals || !Object.keys(r.globals).length) continue
+    lines.push(`| ${r.name} | ${Object.entries(r.globals).map(([k, f]) => `${k}${Array.isArray(f) && f.length ? ` (${f.join(', ')})` : ''}`).join('; ')} |`)
   }
   const odd = results.filter((r) => r.compare || (r.verdict !== 'works' && r.verdict !== 'built into its browser'))
   if (odd.length) {

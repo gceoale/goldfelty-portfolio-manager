@@ -19,7 +19,7 @@ every transfer and signature.
 Coinbase Wallet, Phantom, Brave Wallet, Trust Wallet, OKX Wallet, Rainbow,
 Zerion, Frame Companion, Taho, Enkrypt, Exodus Web3 Wallet, Backpack, Bitget Wallet,
 Uniswap Extension, Core, Talisman, SubWallet, Ronin Wallet, TokenPocket,
-Coin98, SafePal, Ctrl, OneKey, Magic Eden, Wigwam, Fordefi, Zeal, Ambire, Gate
+Coin98, SafePal, Ctrl, OneKey, Magic Eden, Wigwam, Fordefi, Ambire, Gate
 Wallet, Opera Wallet and Crypto.com Onchain. Any other extension that announces
 itself with EIP-6963 shows up too.
 

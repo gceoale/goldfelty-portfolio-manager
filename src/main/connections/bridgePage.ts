@@ -5,7 +5,7 @@
  * themselves through EIP-6963. It reports what it finds to the app, then
  * long-polls for requests and hands each one to the wallet it names.
  *
- * It talks to nothing but the bridge on 127.0.0.1 and the wallets in this
+ * It talks to nothing but the bridge on loopback and the wallets in this
  * browser. It holds no secret and reads nothing from its own URL: the app
  * authenticates it with an HttpOnly cookie set when the one-time link is
  * opened, and tells it which wallet is wanted over the same channel.

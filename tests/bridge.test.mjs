@@ -63,6 +63,25 @@ test('the page and API need the session cookie', async (t) => {
   assert.equal(page.text, BRIDGE_PAGE)
 })
 
+test('the page is opened at localhost, which some wallets need, and 127.0.0.1 still works', async (t) => {
+  // Zerion, Taho and Gate Wallet only inject into http://localhost pages.
+  const bridge = await started(t)
+  assert.match(bridge.origin, /^http:\/\/localhost:\d+$/)
+  assert.match(bridge.issueLink(), /^http:\/\/localhost:\d+\/open\?t=/)
+  const cookie = await session(bridge)
+  const port = new URL(bridge.origin).port
+  const viaIp = await http(bridge.origin, '/', { headers: { cookie, host: `127.0.0.1:${port}` } })
+  assert.equal(viaIp.status, 200)
+  const ipOrigin = await http(bridge.origin, '/api/hello', {
+    method: 'POST',
+    headers: json(cookie, { origin: `http://127.0.0.1:${port}` }),
+    body: { pageId: 'page-0002', providers: [] }
+  })
+  assert.equal(ipOrigin.status, 200)
+  const otherPort = await http(bridge.origin, '/', { headers: { cookie, host: `localhost:${Number(port) + 1}` } })
+  assert.equal(otherPort.status, 403)
+})
+
 test('DNS rebinding and cross-site requests are refused even with the cookie', async (t) => {
   const bridge = await started(t)
   const cookie = await session(bridge)
