@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { BrowserBridge, PAGE_CSP, SECURITY_HEADERS } from '../src/main/connections/browserBridge.ts'
 import { WALLET_REGISTRY } from '../src/shared/walletRegistry.ts'
+import { BRIDGE_PAGE } from '../src/main/connections/bridgePage.ts'
 
 const require = createRequire(import.meta.url)
 let pw
@@ -173,10 +174,21 @@ async function blankServer() {
   const { createServer } = await import('node:http')
   // /csp carries the bridge page's CSP and nothing else; /headers its other
   // security headers without the CSP. Comparing the two finds what stops a wallet.
+  // /bridge-html is the real bridge page with its headers but no bridge
+  // behind it; /bridge-noscript the same without its script; /redirect the
+  // 303 hop the real link takes. Together they find what a wallet reacts to.
+  const noScript = BRIDGE_PAGE.replace(/<script>[\s\S]*<\/script>/, '')
   const server = createServer((req, res) => {
-    const extra = req.url.startsWith('/csp') ? { 'content-security-policy': PAGE_CSP } : req.url.startsWith('/headers') ? SECURITY_HEADERS : {}
+    if (req.url.startsWith('/redirect')) {
+      res.writeHead(303, { location: '/', ...SECURITY_HEADERS })
+      return res.end()
+    }
+    const all = { ...SECURITY_HEADERS, 'content-security-policy': PAGE_CSP }
+    const extra = req.url.startsWith('/csp') ? { 'content-security-policy': PAGE_CSP }
+      : req.url.startsWith('/headers') ? SECURITY_HEADERS
+      : req.url.startsWith('/bridge') ? all : {}
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...extra })
-    res.end('<!doctype html><title>blank</title><p>blank</p>')
+    res.end(req.url.startsWith('/bridge-html') ? BRIDGE_PAGE : req.url.startsWith('/bridge-noscript') ? noScript : '<!doctype html><title>blank</title><p>blank</p>')
   })
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
   server.unref()
@@ -253,6 +265,9 @@ async function probe(entry, extDirs) {
         ['http://localhost (plain page)', `http://localhost:${port}/`],
         ['http://localhost + bridge CSP only', `http://localhost:${port}/csp`],
         ['http://localhost + bridge security headers, no CSP', `http://localhost:${port}/headers`],
+        ['real bridge HTML + headers, no bridge', `http://localhost:${port}/bridge-html`],
+        ['bridge HTML without its script', `http://localhost:${port}/bridge-noscript`],
+        ['plain page reached by a 303 redirect', `http://localhost:${port}/redirect`],
         ['http://127.0.0.1 (plain page)', `http://127.0.0.1:${port}/`],
         ['https://example.com', 'https://example.com/']
       ]) {
