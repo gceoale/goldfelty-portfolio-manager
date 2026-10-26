@@ -281,6 +281,11 @@ async function probe(entry, extDirs) {
         }
         await other.close().catch(() => {})
       }
+      // Fresh installs can be slow to start: does a reload of the bridge tab, a bit later, find it?
+      await page.reload({ waitUntil: 'load' }).catch(() => {})
+      await sleep(8000)
+      const again = bridge.detected().filter((d) => d.providerId === entry.id)
+      result.afterReload = [...new Set(again.map((d) => d.family))]
     }
 
     for (const d of mine) {
@@ -371,6 +376,7 @@ function markdown(results) {
       if (r.injection) lines.push(`- content scripts: ${JSON.stringify(r.injection).slice(0, 400)}`)
       if (r.globals) lines.push(`- globals on the bridge page: ${JSON.stringify(r.globals).slice(0, 400)}`)
       for (const [label, c] of Object.entries(r.compare ?? {})) lines.push(`- ${label}: ${JSON.stringify(c).slice(0, 400)}`)
+      if (r.afterReload) lines.push(`- after reloading the bridge tab: ${r.afterReload.length ? `found (${r.afterReload.join(', ')})` : 'still missing'}`)
       if (r.error) lines.push(`- error: ${r.error}`)
       lines.push('')
     }

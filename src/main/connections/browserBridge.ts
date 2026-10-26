@@ -295,9 +295,11 @@ export class BrowserBridge {
         const found = find()
         if (found) return done(found)
         // A tab is open and has finished announcing, but not this wallet:
-        // give stragglers a moment, then say it is not installed there.
+        // give stragglers a moment, then say it is not installed there. The
+        // page asks again at 5 s, and some wallets (Bitget, Ctrl) are slow
+        // right after the browser starts, so wait past that.
         if (this.pages.size > 0 && !missingTimer) {
-          missingTimer = setTimeout(() => (find() ? done(find()!) : done('missing')), 2_500)
+          missingTimer = setTimeout(() => (find() ? done(find()!) : done('missing')), 6_000)
         }
       })
       const overall = setTimeout(() => done(null), timeoutMs)

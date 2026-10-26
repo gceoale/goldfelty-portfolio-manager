@@ -407,6 +407,18 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
   setTimeout(function () { scanOtherChains(false); }, 600);
   setTimeout(function () { scanOtherChains(true); }, 2500);
 
+  // Some wallets are slow to start, right after the browser opens or the
+  // wallet is installed. Ask everyone again a few times, and when the tab is
+  // looked at; anything already found is ignored.
+  function rescan() {
+    try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: standardApi })); } catch (e) {}
+    scanOtherChains(true);
+    checkWanted();
+  }
+  [5000, 10000, 20000].forEach(function (ms) { setTimeout(rescan, ms); });
+  window.addEventListener('focus', rescan);
+
   // What the app is waiting for comes from the app, never from the URL.
   function loadWant() {
     return fetch('/api/want?pageId=' + encodeURIComponent(PAGE), { credentials: 'same-origin', cache: 'no-store' })
@@ -423,7 +435,7 @@ export const BRIDGE_PAGE = String.raw`<!doctype html>
       return;
     }
     var s = $('status');
-    s.textContent = want.name + ' isn’t installed in this browser. If it’s in a different browser, open the link from Goldfelty there instead.';
+    s.textContent = want.name + ' isn’t showing up in this browser. If you just opened the browser or installed it, reload this tab. If it’s in a different browser, open the link from Goldfelty there instead.';
     s.className = 'status warn';
     if (typeof want.homepage === 'string' && /^https:\/\//.test(want.homepage)) {
       var a = el('a', null, 'Get ' + want.name);
