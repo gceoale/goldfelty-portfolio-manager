@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+<title>Is Goldfelty safe? · Goldfelty</title>
+<meta name="description" content="Is Goldfelty legit? It's an open-source portfolio tracker that never sees your keys or recovery phrase, can't move funds without your wallet's approval, and every download can be verified." />
+<link rel="canonical" href="https://goldfelty.com/security/" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="Goldfelty" />
+<meta property="og:title" content="Is Goldfelty safe?" />
+<meta property="og:description" content="What Goldfelty can and can't do with your wallets, and how to check a download yourself." />
+<meta property="og:url" content="https://goldfelty.com/security/" />
+<meta property="og:image" content="https://goldfelty.com/og-image.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="/icon.png?v=2" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="wrap narrow">
+  <header class="top">
+    <a class="brand" href="/"><img class="mark" src="/mark.png" alt="" width="24" height="24" /> Goldfelty</a>
+    <nav><a href="/">Home</a><a href="/privacy/">Privacy</a></nav>
+  </header>
+
+  <article class="doc">
+    <h1>Is Goldfelty safe?</h1>
+    <p class="updated">Last updated 26 October 2026</p>
+
+    <p>
+      Goldfelty is a portfolio tracker, not a wallet. It never sees your recovery phrase or private keys, it can’t
+      move anything without your own wallet asking you first, and all of its source code is public. This page explains
+      exactly what it can and can’t do, and how to check a download for yourself before you open it.
+    </p>
+
+    <h2>What Goldfelty never does</h2>
+    <ul>
+      <li>
+        <strong>Ask for your recovery phrase or private key.</strong> Not in the app, not on this site, not by email.
+        Anyone who asks for one is a scammer, even if they say they’re Goldfelty.
+      </li>
+      <li>
+        <strong>Ask you to approve token spending.</strong> Goldfelty never requests an “approve”, “permit” or
+        “set approval for all” signature, the kind wallet drainers use. It only sends the exact transfer you reviewed.
+      </li>
+      <li><strong>Hold your funds.</strong> Your crypto stays in your wallets the whole time.</li>
+      <li><strong>Track you.</strong> The app has no analytics, ads or crash reporting.</li>
+    </ul>
+
+    <h2>What your wallet will ask you to approve</h2>
+    <ul>
+      <li>
+        <strong>Transfers you start yourself</strong> on the Send screen, showing the recipient and amount you entered.
+        When a fee applies (a fixed 0.5% of tokens sent through Goldfelty), it’s shown on the review screen first, and
+        your wallet shows it too.
+      </li>
+      <li>
+        <strong>One plain-text message</strong>, only if you create an optional account, to prove the address is yours.
+        A message signature can’t move funds.
+      </li>
+    </ul>
+    <p>
+      Goldfelty also checks what your wallet signed against what you reviewed. On Bitcoin, Solana and Tron it does that
+      before sending, and won’t send if anything differs. On Ethereum and similar networks your wallet sends the
+      transaction itself, and Goldfelty flags it in your activity if it doesn’t match.
+    </p>
+
+    <h2>Checking a download</h2>
+    <p>
+      Only download Goldfelty from this site or from its
+      <a href="https://github.com/gceoale/goldfelty-portfolio-manager/releases">GitHub Releases page</a>. Every
+      installer is built by GitHub’s servers straight from the public source code, and you can check that yourself:
+    </p>
+    <ul>
+      <li>Each release lists every file’s SHA-256 checksum in <code>SHA256SUMS.txt</code>.</li>
+      <li>
+        Each file carries a build provenance attestation, a signed public record of the exact commit and workflow
+        that built it. Check one with
+        <code>gh attestation verify &lt;file&gt; --repo gceoale/goldfelty-portfolio-manager</code>.
+      </li>
+      <li>You can also upload any installer to <a href="https://www.virustotal.com/">VirusTotal</a> to scan it.</li>
+    </ul>
+
+    <h2>Why does my computer warn me?</h2>
+    <p>
+      Goldfelty’s builds aren’t signed by Apple or Microsoft yet, which takes paid certificates from each. Once
+      they are, these warnings go away. An unsigned app isn’t the same as malware, but it does mean you should check the
+      download as above before opening it.
+    </p>
+    <p>
+      <strong>Windows:</strong> SmartScreen shows “Windows protected your PC”. Choose More info, then Run anyway.
+    </p>
+    <p>
+      <strong>macOS:</strong> open the app once, then go to System Settings, Privacy &amp; Security, and choose
+      Open Anyway. If macOS instead says the app “is damaged”, that’s how it treats unsigned apps downloaded from the
+      internet. The steps for that appear when you choose a Mac download on the <a href="/#download">home page</a>.
+    </p>
+
+    <h2>Open source and reviewed</h2>
+    <p>
+      The full <a href="https://github.com/gceoale/goldfelty-portfolio-manager">source code is on GitHub</a>, along
+      with a <a href="https://github.com/gceoale/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md">security
+      review</a> of the app, the wallet connection and the account service. Fee payments are public on each
+      blockchain, like every transaction.
+    </p>
+
+    <h2>Report a problem</h2>
+    <p>
+      Found a security issue, or a site pretending to be Goldfelty? Email
+      <a href="mailto:security@goldfelty.com">security@goldfelty.com</a>. For anything else, write to
+      <a href="mailto:support@goldfelty.com">support@goldfelty.com</a>.
+    </p>
+  </article>
+
+  <footer>
+    <span>© 2026 Goldfelty</span>
+    <span><a href="/">Home</a> · <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a></span>
+  </footer>
+</div>
+</body>
+</html>

@@ -5,34 +5,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'; object-src 'none'" />
 <meta name="referrer" content="strict-origin-when-cross-origin" />
-<title>Goldfelty: manage crypto, better</title>
-<meta name="description" content="A free desktop app for macOS, Windows and Linux that brings every crypto wallet you use into one place. Connect MetaMask, Phantom, Rabby, UniSat and 30 more, on Ethereum, Bitcoin, Solana, Tron and more. Your keys never leave your wallets." />
+<title>Goldfelty: Free Crypto Portfolio Tracker for Every Wallet</title>
+<meta name="description" content="Free desktop crypto portfolio tracker for Mac, Windows and Linux. See MetaMask, Phantom, Ledger and 30+ wallets in one place. Your keys never leave your wallets." />
 <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#121110" media="(prefers-color-scheme: dark)" />
 <link rel="canonical" href="https://goldfelty.com/" />
 <meta property="og:type" content="website" />
+<meta property="og:site_name" content="Goldfelty" />
+<meta property="og:locale" content="en_US" />
 <meta property="og:title" content="Goldfelty: manage crypto, better" />
-<meta property="og:description" content="Every wallet you use, in one desktop app. Your keys never leave your wallets." />
+<meta property="og:description" content="A free desktop portfolio tracker for every crypto wallet you use, on Mac, Windows and Linux. Your keys never leave your wallets." />
 <meta property="og:url" content="https://goldfelty.com/" />
-<meta property="og:image" content="https://goldfelty.com/screenshot.png" />
+<meta property="og:image" content="https://goldfelty.com/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Goldfelty: Manage crypto, better. A free desktop portfolio tracker for every wallet you use." />
 <meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Goldfelty: manage crypto, better" />
+<meta name="twitter:description" content="A free desktop portfolio tracker for every crypto wallet you use. Your keys never leave your wallets." />
+<meta name="twitter:image" content="https://goldfelty.com/og-image.png" />
 <link rel="icon" href="/icon.png?v=2" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
 <link rel="preload" href="/fonts/instrument-serif-italic.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="/style.css" />
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "Goldfelty Portfolio Manager",
-  "applicationCategory": "FinanceApplication",
-  "operatingSystem": "macOS, Windows, Linux",
-  "softwareVersion": "1.2.1",
-  "url": "https://goldfelty.com/",
-  "downloadUrl": "https://github.com/gceoale/goldfelty-portfolio-manager/releases/latest",
-  "screenshot": "https://goldfelty.com/screenshot.png",
-  "description": "A desktop portfolio manager for the crypto wallets you already use. Connects MetaMask, Phantom, Rabby, UniSat and 30 more without holding your keys.",
-  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://goldfelty.com/#org",
+      "name": "Goldfelty",
+      "url": "https://goldfelty.com/",
+      "logo": "https://goldfelty.com/icon-512.png",
+      "email": "support@goldfelty.com",
+      "sameAs": ["https://github.com/gceoale/goldfelty-portfolio-manager"]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://goldfelty.com/#site",
+      "name": "Goldfelty",
+      "url": "https://goldfelty.com/",
+      "publisher": { "@id": "https://goldfelty.com/#org" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Goldfelty Portfolio Manager",
+      "alternateName": "Goldfelty",
+      "applicationCategory": "FinanceApplication",
+      "operatingSystem": "macOS, Windows, Linux",
+      "softwareVersion": "1.2.1",
+      "url": "https://goldfelty.com/",
+      "downloadUrl": "https://github.com/gceoale/goldfelty-portfolio-manager/releases/latest",
+      "image": "https://goldfelty.com/icon-512.png",
+      "screenshot": "https://goldfelty.com/screenshot.png",
+      "description": "A free desktop crypto portfolio tracker for the wallets you already use. Connects MetaMask, Phantom, Rabby, UniSat and 30 more on Ethereum, Bitcoin, Solana, Tron and other networks, without ever holding your keys.",
+      "featureList": "Track every wallet in one view; Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain, Avalanche, Bitcoin, Solana and Tron; Litecoin, Dogecoin and XRP balances; send and receive from your own wallets; encrypted local storage; automatic, checksum-verified updates",
+      "isAccessibleForFree": true,
+      "publisher": { "@id": "https://goldfelty.com/#org" },
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+  ]
 }
 </script>
 </head>
@@ -55,8 +90,8 @@
       <p class="eyebrow"><span class="dot"></span>New in 1.2: Bitcoin, Solana and Tron</p>
       <h1 class="display">Manage crypto, <em>better</em>.</h1>
       <p class="lede">
-        Every wallet you use, in one calm desktop app. See what you hold and what it’s worth, then send from
-        whichever wallet you choose. Your keys never leave your wallets.
+        A crypto portfolio tracker for every wallet you use, in one calm desktop app. See what you hold and what
+        it’s worth, then send from whichever wallet you choose. Your keys never leave your wallets.
       </p>
       <div class="actions">
         <a class="btn big" data-primary href="https://github.com/gceoale/goldfelty-portfolio-manager/releases/latest">Download Goldfelty</a>
@@ -69,7 +104,7 @@
         <div class="window-bar" aria-hidden="true"><span></span><span></span><span></span></div>
         <picture>
           <source srcset="/screenshot-dark.png" media="(prefers-color-scheme: dark)" />
-          <img src="/screenshot.png" width="1240" height="800" alt="Goldfelty’s Overview: a total of $22,322 across four wallets, a one-month chart, and holdings in ETH, USDC, BTC, SOL and POL" />
+          <img src="/screenshot.png" width="1240" height="800" fetchpriority="high" alt="Goldfelty’s Overview: a total of $22,322 across four wallets, a one-month chart, and holdings in ETH, USDC, BTC, SOL and POL" />
         </picture>
       </figure>
     </div>
@@ -106,7 +141,7 @@
         <article>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z" /><path d="M9 12l2 2 4-4" /></svg>
           <h3>Checked twice</h3>
-          <p>Lookalike addresses are flagged, and every signed transaction is compared with what you reviewed before it’s sent.</p>
+          <p>Lookalike addresses are flagged, and what your wallet signs is checked against what you reviewed.</p>
         </article>
         <article>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M4 12h16M12 4c2.5 2.5 2.5 13.5 0 16M12 4c-2.5 2.5-2.5 13.5 0 16" /></svg>
@@ -243,11 +278,90 @@
           <code>gh attestation verify &lt;file&gt; --repo gceoale/goldfelty-portfolio-manager</code>.
         </p>
         <p>
-          Builds aren’t signed by Apple or Microsoft yet. On macOS, after moving the app to Applications, run
-          <code>xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"</code>. On Windows, choose
-          More info, then Run anyway.
+          Builds aren’t signed by Apple or Microsoft yet, so your computer may warn you the first time you open
+          Goldfelty. <a href="/security/">Is Goldfelty safe?</a> explains why, how to check a download, and how to open it.
         </p>
       </details>
+    </div>
+  </section>
+
+  <section id="faq" class="block soft">
+    <div class="wrap">
+      <h2 class="section-title">Questions, <em>answered</em>.</h2>
+      <div class="faq">
+        <details>
+          <summary>Is Goldfelty legit and safe?</summary>
+          <p>
+            Yes. Goldfelty is an open-source portfolio tracker, not a wallet. It never asks for your recovery phrase or
+            private keys, never asks you to approve token spending, and can’t move funds without your own wallet asking
+            you first. Every download is built from the public source code on GitHub and can be verified.
+            <a href="/security/">Is Goldfelty safe?</a> covers the details.
+          </p>
+        </details>
+        <details>
+          <summary>What is Goldfelty?</summary>
+          <p>
+            Goldfelty is a free crypto portfolio tracker for your desktop. It connects the wallets you already use and
+            shows your total balance, its history and every holding across all your wallets and networks in one place.
+            You can also send and receive from those wallets without switching apps.
+          </p>
+        </details>
+        <details>
+          <summary>Is Goldfelty a wallet? Can it see my private keys?</summary>
+          <p>
+            No. Goldfelty never creates a wallet and never asks for a recovery phrase or private key, because it never
+            needs one. It reads your addresses, and every transfer is approved in your own wallet, such as MetaMask,
+            Phantom or your Ledger.
+          </p>
+        </details>
+        <details>
+          <summary>Which wallets and networks does it support?</summary>
+          <p>
+            Over 35 browser wallets, including MetaMask, Phantom, Rabby, Coinbase Wallet, OKX, Trust Wallet, Solflare,
+            UniSat, Xverse, Leather and TronLink. Ledger, Trezor and GridPlus hardware wallets connect through Frame, and
+            phone wallets through WalletConnect. You can send on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain,
+            Avalanche, Bitcoin, Solana and Tron, and track Litecoin, Dogecoin and XRP balances.
+          </p>
+        </details>
+        <details>
+          <summary>Can I track a wallet that won’t connect, like Exodus?</summary>
+          <p>
+            Yes. Add its addresses and Goldfelty tracks the balances so they count in your total. You send from that
+            wallet itself.
+          </p>
+        </details>
+        <details>
+          <summary>How much does Goldfelty cost?</summary>
+          <p>
+            Downloading and using Goldfelty is free: tracking, charts, history and receiving cost nothing, and there are
+            no ads or subscriptions. A fixed 0.5% fee applies only to tokens you send through Goldfelty, shown before you
+            confirm. Sending from your wallet directly stays free.
+          </p>
+        </details>
+        <details>
+          <summary>Does it work on Mac, Windows and Linux?</summary>
+          <p>
+            Yes. There are builds for macOS on Apple silicon and Intel, Windows on x64 and ARM (installer or portable),
+            and Linux as an AppImage, .deb, .rpm or .tar.gz. Each one updates itself in the same form you installed.
+          </p>
+        </details>
+        <details>
+          <summary>Is my data private?</summary>
+          <p>
+            Your wallets, balances and history stay on your computer, encrypted with your password. There’s no
+            analytics, and no account is needed. Balances are read from public blockchain services, which you can swap
+            for your own node in Settings. The <a href="/privacy/">Privacy Policy</a> lists everything the app contacts.
+          </p>
+        </details>
+        <details>
+          <summary>Is Goldfelty open source?</summary>
+          <p>
+            Yes. The <a href="https://github.com/gceoale/goldfelty-portfolio-manager">source code is on GitHub</a>, along
+            with a <a href="https://github.com/gceoale/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md">security review</a>.
+            Every download is listed with its checksum and a signed record of the build that produced it.
+          </p>
+        </details>
+      </div>
     </div>
   </section>
 
@@ -264,6 +378,8 @@
   <div class="wrap footer-inner">
     <a class="brand" href="/"><img class="mark" src="/mark.png" alt="" width="24" height="24" /> Goldfelty</a>
     <span class="links">
+      <a href="#faq">FAQ</a>
+      <a href="/security/">Safety</a>
       <a href="/terms/">Terms</a>
       <a href="/privacy/">Privacy</a>
       <a href="https://github.com/gceoale/goldfelty-portfolio-manager/blob/main/docs/SECURITY-AUDIT.md">Security review</a>

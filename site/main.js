@@ -47,4 +47,76 @@
       }
     })
     .catch(function () {})
+
+  // Mac builds aren't signed by Apple yet, so macOS stops them on first launch.
+  // Show how to open one, but only once someone actually downloads it.
+  var MAC_CMD = 'xattr -dr com.apple.quarantine "/Applications/Goldfelty Portfolio Manager.app"'
+  var dialog = null
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag)
+    if (cls) node.className = cls
+    if (text) node.textContent = text
+    return node
+  }
+
+  function buildDialog() {
+    var d = el('dialog', 'mac-help')
+    d.setAttribute('aria-labelledby', 'mac-help-title')
+    var title = el('h2', null, 'Opening Goldfelty on a Mac')
+    title.id = 'mac-help-title'
+    d.appendChild(title)
+    d.appendChild(el('p', 'muted', 'Your download has started. Goldfelty isn’t signed by Apple yet, so macOS will stop it the first time you open it.'))
+
+    var steps = el('ol')
+    steps.appendChild(el('li', null, 'Open the .dmg and drag Goldfelty into Applications.'))
+    steps.appendChild(el('li', null, 'Open Goldfelty. If macOS says it can’t check the app, go to System Settings, then Privacy & Security, and click Open Anyway.'))
+    var last = el('li', null, 'If macOS says the app “is damaged”, open Terminal and run this. It removes the flag macOS adds to downloaded apps, and doesn’t change the app itself.')
+    var row = el('div', 'cmd')
+    row.appendChild(el('code', null, MAC_CMD))
+    var copy = el('button', 'btn small ghost', 'Copy')
+    copy.type = 'button'
+    copy.addEventListener('click', function () {
+      if (!navigator.clipboard) return
+      navigator.clipboard.writeText(MAC_CMD).then(function () {
+        copy.textContent = 'Copied'
+        setTimeout(function () { copy.textContent = 'Copy' }, 1500)
+      }, function () {})
+    })
+    row.appendChild(copy)
+    last.appendChild(row)
+    steps.appendChild(last)
+    d.appendChild(steps)
+
+    var foot = el('div', 'foot')
+    var more = el('a', null, 'How to check a download first')
+    more.href = '/security/'
+    foot.appendChild(more)
+    var done = el('button', 'btn small', 'Done')
+    done.type = 'button'
+    done.addEventListener('click', function () { d.close() })
+    foot.appendChild(done)
+    d.appendChild(foot)
+
+    // A click on the backdrop lands on the dialog itself.
+    d.addEventListener('click', function (e) { if (e.target === d) d.close() })
+    document.body.appendChild(d)
+    return d
+  }
+
+  function isMacDownload(a) {
+    var asset = a.getAttribute('data-asset') || ''
+    if (/dmg/.test(asset)) return true
+    return a.hasAttribute('data-primary') && !!g && g.os === 'mac'
+  }
+
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-asset], a[data-primary]')
+    if (!a || !isMacDownload(a)) return
+    // Only when the link starts a download; if it opens the releases page instead, the visitor leaves anyway.
+    if (!/\/releases\/download\//.test(a.href)) return
+    if (typeof HTMLDialogElement !== 'function') return
+    if (!dialog) dialog = buildDialog()
+    if (!dialog.open) dialog.showModal()
+  })
 })()
