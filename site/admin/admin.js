@@ -53,32 +53,36 @@
       .then(function (s) {
         store(token)
         $('status').textContent = 'Updated ' + new Date().toLocaleTimeString()
-        $('stats').hidden = false
-        $('totals-section').hidden = false
-        $('people-section').hidden = false
-        $('users').textContent = Number(s.users || 0).toLocaleString()
-        $('week').textContent = Number(s.newThisWeek || 0).toLocaleString()
-        $('sharing').textContent = Number(s.sharing || 0).toLocaleString()
-        fill('totals', (s.totals || []).map(function (t) {
-          var users = Number(t.users) || 0
-          var total = Number(t.total) || 0
-          return row([{ text: t.currency }, { text: users, num: true }, { text: money(total, t.currency), num: true }, { text: users ? money(total / users, t.currency) : '', num: true }])
-        }))
-        fill('people', (s.accounts || []).map(function (a) {
-          var shared = a.value !== null && a.value !== undefined
-          return row([
-            { text: a.username },
-            { text: a.email },
-            { text: date(a.createdAt) },
-            { text: shared ? a.wallets : '', num: true },
-            { text: shared ? money(Number(a.value), a.currency) : 'Not shared', num: true },
-            { text: shared ? date(a.reportedAt) : '' }
-          ])
-        }))
+        render(s)
       })
       .catch(function (e) {
         $('status').textContent = e.message || 'Couldn’t reach api.goldfelty.com.'
       })
+  }
+
+  function render(s) {
+    $('stats').hidden = false
+    $('totals-section').hidden = false
+    $('people-section').hidden = false
+    $('users').textContent = Number(s.users || 0).toLocaleString()
+    $('week').textContent = Number(s.newThisWeek || 0).toLocaleString()
+    $('sharing').textContent = Number(s.sharing || 0).toLocaleString()
+    fill('totals', (s.totals || []).map(function (t) {
+      var users = Number(t.users) || 0
+      var total = Number(t.total) || 0
+      return row([{ text: t.currency }, { text: users.toLocaleString(), num: true }, { text: money(total, t.currency), num: true }, { text: users ? money(total / users, t.currency) : '', num: true }])
+    }))
+    fill('people', (s.accounts || []).map(function (a) {
+      var shared = a.value !== null && a.value !== undefined
+      return row([
+        { text: a.username },
+        { text: a.email },
+        { text: date(a.createdAt) },
+        { text: shared ? a.wallets : '', num: true },
+        { text: shared ? money(Number(a.value), a.currency) : 'Not shared', num: true },
+        { text: shared ? date(a.reportedAt) : '' }
+      ])
+    }))
   }
 
   function downloads() {
@@ -95,6 +99,61 @@
         $('downloads').textContent = n.toLocaleString()
       })
       .catch(function () {})
+  }
+
+  // Demo mode (/admin/?demo): made-up numbers for screenshots and for checking
+  // how the page looks at scale. Nothing is fetched and no token is needed.
+  // The same data comes out every time (seeded random numbers).
+  var DEMO = { users: 3246523, downloads: 5048723, newThisWeek: 41870, sharing: 1298609, shown: 500, max: 57000000, min: 3 }
+
+  function demoStats() {
+    var seed = 20261027
+    function rand() {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 4294967296
+    }
+    function pick(list) { return list[Math.floor(rand() * list.length)] }
+    var first = ['alex', 'sam', 'jordan', 'taylor', 'casey', 'riley', 'morgan', 'jamie', 'drew', 'avery', 'quinn', 'blake', 'reese', 'parker', 'rowan', 'emery', 'sage', 'kai', 'noa', 'lee']
+    var second = ['gold', 'stack', 'hodl', 'moon', 'chain', 'block', 'ledger', 'vault', 'coin', 'sats', 'whale', 'fox', 'bear', 'bull', 'node', 'mint', 'byte', 'hash', 'peak', 'wave']
+    var day = 86400000
+    var now = Date.now()
+    var accounts = []
+    var sum = 0
+    for (var i = 0; i < DEMO.shown; i++) {
+      // Spread from $57M at the top down to $3 at the bottom, denser near the
+      // small end, the way real balances tend to be.
+      var t = i / (DEMO.shown - 1)
+      var value = i === 0 ? DEMO.max : i === DEMO.shown - 1 ? DEMO.min
+        : DEMO.min * Math.pow(DEMO.max / DEMO.min, Math.pow(1 - t, 2) * (0.97 + rand() * 0.06))
+      if (i > 0 && i < DEMO.shown - 1) value = Math.min(DEMO.max - 1, Math.max(DEMO.min + 1, Math.round(value)))
+      sum += value
+      var name = pick(first) + '_' + pick(second) + Math.floor(rand() * 1000)
+      accounts.push({
+        username: name,
+        email: name + '@example.com',
+        createdAt: new Date(now - Math.floor(rand() * 730) * day).toISOString(),
+        wallets: 1 + Math.floor(rand() * 9),
+        value: value,
+        currency: 'USD',
+        reportedAt: new Date(now - Math.floor(rand() * 5) * day).toISOString()
+      })
+    }
+    accounts.sort(function (a, b) { return b.value - a.value })
+    return {
+      users: DEMO.users,
+      newThisWeek: DEMO.newThisWeek,
+      sharing: DEMO.sharing,
+      totals: [{ currency: 'USD', users: DEMO.sharing, total: (sum / DEMO.shown) * DEMO.sharing }],
+      accounts: accounts
+    }
+  }
+
+  var demo = /[?&]demo(=|&|$)/.test(location.search)
+  if (demo) {
+    $('status').textContent = ''
+    $('downloads').textContent = DEMO.downloads.toLocaleString()
+    render(demoStats())
+    return
   }
 
   // Over plain HTTP anyone on the network path could read the token or change
