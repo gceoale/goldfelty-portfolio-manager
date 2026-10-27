@@ -113,8 +113,27 @@
       return seed / 4294967296
     }
     function pick(list) { return list[Math.floor(rand() * list.length)] }
-    var first = ['alex', 'sam', 'jordan', 'taylor', 'casey', 'riley', 'morgan', 'jamie', 'drew', 'avery', 'quinn', 'blake', 'reese', 'parker', 'rowan', 'emery', 'sage', 'kai', 'noa', 'lee']
-    var second = ['gold', 'stack', 'hodl', 'moon', 'chain', 'block', 'ledger', 'vault', 'coin', 'sats', 'whale', 'fox', 'bear', 'bull', 'node', 'mint', 'byte', 'hash', 'peak', 'wave']
+    var first = ['James', 'Emma', 'Michael', 'Olivia', 'Daniel', 'Sophia', 'David', 'Ava', 'Chris', 'Mia', 'Ryan', 'Isabella', 'Matthew', 'Chloe', 'Andrew', 'Grace', 'Josh', 'Hannah', 'Kevin', 'Lily',
+      'Brandon', 'Natalie', 'Tyler', 'Zoe', 'Jason', 'Megan', 'Eric', 'Rachel', 'Aaron', 'Lauren', 'Marcus', 'Jasmine', 'Luis', 'Sofia', 'Carlos', 'Elena', 'Wei', 'Mei', 'Arjun', 'Priya',
+      'Omar', 'Layla', 'Kenji', 'Yuki', 'Liam', 'Aisha', 'Noah', 'Fatima', 'Ethan', 'Nadia', 'Lucas', 'Amara', 'Mateo', 'Hana', 'Jin', 'Ana', 'Sean', 'Erin', 'Dmitri', 'Katya']
+    var last = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee',
+      'Thompson', 'White', 'Harris', 'Clark', 'Lewis', 'Robinson', 'Walker', 'Young', 'Allen', 'King', 'Wright', 'Scott', 'Nguyen', 'Hill', 'Flores', 'Green', 'Adams', 'Nelson', 'Baker', 'Hall',
+      'Rivera', 'Campbell', 'Mitchell', 'Carter', 'Roberts', 'Patel', 'Kim', 'Chen', 'Wong', 'Singh', 'Khan', 'Ali', 'Tanaka', 'Sato', 'Park', 'Murphy', 'Kelly', 'Novak', 'Petrov', 'Rossi']
+    var domains = ['gmail.com', 'gmail.com', 'gmail.com', 'gmail.com', 'gmail.com', 'outlook.com', 'outlook.com', 'hotmail.com', 'hotmail.com']
+    var taken = {}
+    function person() {
+      var f = pick(first), l = pick(last)
+      var fl = f.toLowerCase(), ll = l.toLowerCase()
+      var year = String(1965 + Math.floor(rand() * 40))
+      var num = String(10 + Math.floor(rand() * 9990))
+      // Same rules as real usernames: lowercase letters, numbers, - and _.
+      var username = pick([fl + '_' + ll, fl + '-' + ll, fl + ll, fl + ll.charAt(0), fl.charAt(0) + ll + year.slice(2), fl + '_' + ll + year.slice(2), fl + ll.charAt(0) + num.slice(-2)])
+      var local = pick([fl + '.' + ll + num, fl + ll + year, fl.charAt(0) + ll + num, fl + '.' + ll + year.slice(2), ll + '.' + fl + num, fl + '_' + ll + num])
+      var email = local + '@' + pick(domains)
+      if (taken[email]) return person()
+      taken[email] = true
+      return { username: username, email: email }
+    }
     var day = 86400000
     var now = Date.now()
     var accounts = []
@@ -127,10 +146,10 @@
         : DEMO.min * Math.pow(DEMO.max / DEMO.min, Math.pow(1 - t, 2) * (0.97 + rand() * 0.06))
       if (i > 0 && i < DEMO.shown - 1) value = Math.min(DEMO.max - 1, Math.max(DEMO.min + 1, Math.round(value)))
       sum += value
-      var name = pick(first) + '_' + pick(second) + Math.floor(rand() * 1000)
+      var who = person()
       accounts.push({
-        username: name,
-        email: name + '@example.com',
+        username: who.username,
+        email: who.email,
         createdAt: new Date(now - Math.floor(rand() * 730) * day).toISOString(),
         wallets: 1 + Math.floor(rand() * 9),
         value: value,
