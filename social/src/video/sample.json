@@ -31,13 +31,6 @@
       "voice": "narrator",
       "look": "goldfelty",
       "color": "gold"
-    },
-    {
-      "id": "nar",
-      "name": "Narrator",
-      "voice": "dramatic",
-      "look": "none",
-      "color": "gray"
     }
   ],
   "scenes": [
@@ -50,7 +43,7 @@
       "lines": [
         {
           "speaker": "me",
-          "text": "Quick question. How much crypto do I actually have?",
+          "text": "How much crypto do I actually have?",
           "sfx": "none"
         }
       ]
@@ -69,17 +62,17 @@
         },
         {
           "speaker": "w3",
-          "text": "Not it. I've got your gas money and a frog coin.",
+          "text": "Not it. Gas money and a frog coin.",
           "sfx": "none"
         },
         {
           "speaker": "w6",
-          "text": "Four dollars and a token you bought at 2am.",
+          "text": "$4 and a token you bought at 2am.",
           "sfx": "none"
         },
         {
           "speaker": "w6",
-          "text": "Ask the wallet you made in 2021. He's never in this chat.",
+          "text": "Ask the 2021 wallet. He's never in this chat.",
           "sfx": "none"
         }
       ]
@@ -101,13 +94,8 @@
       ],
       "lines": [
         {
-          "speaker": "nar",
-          "text": "Forty-seven tabs. One spreadsheet. Zero answers.",
-          "sfx": "none"
-        },
-        {
           "speaker": "me",
-          "text": "The spreadsheet says I'm rich. The spreadsheet is from March.",
+          "text": "The spreadsheet is from March.",
           "sfx": "scratch"
         }
       ]
@@ -121,18 +109,8 @@
       "lines": [
         {
           "speaker": "gf",
-          "text": "Or. You could open one app.",
+          "text": "Or. One app.",
           "sfx": "ding"
-        },
-        {
-          "speaker": "me",
-          "text": "Who are you?",
-          "sfx": "none"
-        },
-        {
-          "speaker": "gf",
-          "text": "Every wallet, one place. And I never touch your keys.",
-          "sfx": "none"
         }
       ]
     },
@@ -142,13 +120,7 @@
       "screen": "overview",
       "hotspot": "wallets",
       "chaos_items": [],
-      "lines": [
-        {
-          "speaker": "gf",
-          "text": "Ethereum, Solana, Bitcoin. Even Exodus, read-only. All counted.",
-          "sfx": "none"
-        }
-      ]
+      "lines": []
     },
     {
       "kind": "punchline",
@@ -157,11 +129,6 @@
       "hotspot": "none",
       "chaos_items": [],
       "lines": [
-        {
-          "speaker": "me",
-          "text": "Wait. The 2021 wallet was in my browser this whole time?",
-          "sfx": "none"
-        },
         {
           "speaker": "w6",
           "text": "Great. Now he's in the chat.",
@@ -178,7 +145,7 @@
       "lines": [
         {
           "speaker": "gf",
-          "text": "Goldfelty. It's free. goldfelty.com.",
+          "text": "Goldfelty. Free. goldfelty.com",
           "sfx": "cash"
         }
       ]

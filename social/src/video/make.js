@@ -7,10 +7,23 @@ import { loadFacts } from '../generate.js';
 import { loadQueue } from '../queue.js';
 import { score } from '../metrics.js';
 import { writeVideo, normalizeSpec } from './script.js';
-import { chooseProvider, castVoices, speak } from './tts.js';
+import { chooseProvider, castVoices, speak, silence } from './tts.js';
 import { buildTimeline } from './timeline.js';
 import { loadAssets } from './screens.js';
 import { findFfmpeg, makeSfx, mixAudio, playerHtml, renderFrames } from './render.js';
+
+// Long enough to read a text message at a glance.
+export function chatTime(text) {
+  return 0.7 + text.split(/\s+/).filter(Boolean).length * 0.24;
+}
+
+async function chatPause(ffmpeg, text, cacheDir) {
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const seconds = chatTime(text);
+  const file = path.join(cacheDir, `chat-${seconds.toFixed(2)}.wav`);
+  if (!fs.existsSync(file)) await silence(ffmpeg, seconds, file);
+  return { file, duration: seconds };
+}
 
 export const SAMPLE = fileURLToPath(new URL('./sample.json', import.meta.url));
 
@@ -52,7 +65,10 @@ export async function makeVideo(deps, { client, spec, format = '', log = deps.lo
   for (const [si, scene] of finalSpec.scenes.entries()) {
     durations[si] = [];
     for (const [li, line] of scene.lines.entries()) {
-      const { file, duration } = await speak({ text: line.text, voice: voices[line.speaker], provider, config, ffmpeg, cacheDir, fetchImpl: deps.fetch });
+      // Chat messages are read on screen, not aloud.
+      const { file, duration } = scene.kind === 'chat'
+        ? await chatPause(ffmpeg, line.text, cacheDir)
+        : await speak({ text: line.text, voice: voices[line.speaker], provider, config, ffmpeg, cacheDir, fetchImpl: deps.fetch });
       durations[si][li] = duration;
       spoken.push({ si, li, file });
     }

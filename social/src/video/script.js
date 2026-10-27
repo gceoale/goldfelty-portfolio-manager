@@ -65,7 +65,7 @@ export const SPEC_SCHEMA = {
   },
 };
 
-export const WRITER_SYSTEM = `You write short, genuinely funny vertical videos (YouTube Shorts, 25 to 45 seconds) for Goldfelty's own channel. Goldfelty is a free desktop app that shows all of someone's crypto wallets in one place, and lets them send from one screen while their own wallet approves everything.
+export const WRITER_SYSTEM = `You write short, genuinely funny vertical videos (YouTube Shorts, 20 to 35 seconds) for Goldfelty's own channel. Goldfelty is a free desktop app that shows all of someone's crypto wallets in one place, and lets them send from one screen while their own wallet approves everything.
 
 The comedy lives in relatable self-custody pain: seven wallets and no idea what's in which; 40 browser tabs to add up one number; the spreadsheet updated once in March; checking the total at 3am; "which chain did I bridge that to"; explaining your setup to family; seed-phrase paranoia; tiny gas fees that somehow add up; the token you forgot you had. Goldfelty shows up as the payoff that ends the pain, never as the butt of the joke.
 
@@ -73,8 +73,9 @@ Craft:
 - Hook in the first two seconds: a specific, slightly absurd, instantly relatable situation. The first spoken line and the hook caption must make a scroller stop.
 - One clear premise per video. Escalate: each beat bigger than the last (rule of three works).
 - Characters with strong attitudes: the anxious owner, a smug or needy wallet, a deadpan Goldfelty, a mock nature-documentary or movie-trailer narrator. Give wallets and coins personalities.
-- Lines short and speakable: at most 14 words, written the way people talk. Comic timing over information.
-- Length: 70 to 110 spoken words in total (about 30 to 45 seconds). Cut anything that isn't a setup or a laugh.
+- Talk as little as possible. Let the visuals, captions, text messages and sound effects carry the jokes; spoken lines are the punch, not the explanation.
+- At most 35 spoken words in the whole video, and most scenes have no spoken line or just one. Each spoken line is at most 8 words. Chat messages don't count: they are shown, not read aloud.
+- Never narrate what's already on screen, and never explain a joke.
 - Show the real app once or twice with a screen and one concrete fact from the facts sheet, said with a joke, not a sales pitch.
 - End on a punchline or callback, then a 2 to 4 second outro that says goldfelty.com. No "link in bio", no "smash that like button".
 - Rotate formats between videos: text-message chat, two-character skit, POV, expectation versus reality, nature documentary, movie trailer, "things nobody tells you".
@@ -82,11 +83,11 @@ Craft:
 Scenes (render as vertical video, 5 to 9 scenes):
 - hook: big caption (at most 7 words) plus a spoken line. Always first.
 - dialogue: characters on screen talking; the speaker animates.
-- chat: a phone text conversation; each line is a message, spoken aloud by its sender.
+- chat: a phone text conversation; each line is a message, shown on screen with a pop and not read aloud. Keep messages short.
 - chaos: windows and tabs piling up; chaos_items are their titles (wallet names, "portfolio_FINAL_v7.xlsx", "block explorer", "price site").
 - app: a real Goldfelty screen (pick screen and hotspot) with a caption and a line about it.
 - punchline: big caption for the biggest laugh.
-- outro: always last; caption like "Every wallet. One app." and a line that ends with goldfelty.com.
+- outro: always last; caption like "Every wallet. One app." and at most one short line, ending with goldfelty.com.
 Fields that don't apply to a scene: caption "", screen "none", hotspot "none", chaos_items []. sfx can punctuate a line ("none" mostly; use them for timing, not on every line).
 
 Cast: 1 to 3 characters plus an optional narrator (look "none"). Each id is referenced as the speaker of lines. Use distinct voices.
@@ -157,7 +158,7 @@ export function normalizeSpec(spec) {
     if (s.screen !== 'none' && !SCREEN_NAMES.includes(s.screen)) s.screen = 'none';
     s.chaos_items = (s.chaos_items || []).slice(0, 12);
   }
-  scenes = scenes.filter((s) => s.lines.length || ['chaos', 'punchline', 'outro', 'hook'].includes(s.kind));
+  scenes = scenes.filter((s) => s.lines.length || ['chaos', 'punchline', 'outro', 'hook', 'app'].includes(s.kind));
   if (scenes.length < 3) throw new Error('The script is too short.');
   if (scenes.at(-1).kind !== 'outro') {
     scenes.push({ kind: 'outro', caption: 'Every wallet. One app.', screen: 'none', hotspot: 'none', chaos_items: [], lines: [] });
