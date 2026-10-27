@@ -31,7 +31,10 @@ export const LIMITS = {
   check: { max: 120, windowMs: 60_000 },
   report: { max: 30, windowMs: 60 * 60_000 },
   // The owner loads the dashboard now and then; anything faster is guessing.
-  admin: { max: 10, windowMs: 15 * 60_000 }
+  admin: { max: 10, windowMs: 15 * 60_000 },
+  // The social dashboard and its runner make a handful of calls each time.
+  social: { max: 300, windowMs: 15 * 60_000 },
+  callback: { max: 30, windowMs: 15 * 60_000 }
 }
 
 /** Currencies the app reports totals in. */
@@ -65,7 +68,7 @@ export function usernameProblem(username) {
   return null
 }
 
-const SECURITY_HEADERS = {
+export const SECURITY_HEADERS = {
   'access-control-allow-origin': 'https://goldfelty.com',
   vary: 'origin',
   'cache-control': 'no-store',
@@ -76,31 +79,31 @@ const SECURITY_HEADERS = {
   'x-frame-options': 'DENY'
 }
 
-const json = (status, body, extra = {}) =>
+export const json = (status, body, extra = {}) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json', ...SECURITY_HEADERS, ...extra }
   })
 
-async function sha256hex(text) {
+export async function sha256hex(text) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function randomToken() {
+export function randomToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 /** Compare two strings without an early exit, so timing says nothing. */
-function sameString(a, b) {
+export function sameString(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false
   let diff = 0
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
   return diff === 0
 }
 
-function bearer(request) {
+export function bearer(request) {
   const header = request.headers.get('authorization') ?? ''
   // Any printable characters, so an admin token can be a passphrase with symbols.
   const match = /^Bearer ([\x21-\x7e]{16,256})$/.exec(header)
@@ -124,7 +127,7 @@ async function accountFromToken(db, request) {
 }
 
 /** Returns a 429 response when `kind` is over its limit for this caller, else null. */
-async function rateLimit(db, request, kind, now) {
+export async function rateLimit(db, request, kind, now) {
   if (typeof db.hit !== 'function') return null
   const { max, windowMs } = LIMITS[kind]
   const window = Math.floor(now / windowMs)
@@ -244,7 +247,7 @@ export async function handleRequest(db, request, now = Date.now(), options = {})
       status: 204,
       headers: {
         'access-control-allow-origin': 'https://goldfelty.com',
-        'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
         'access-control-allow-headers': 'content-type,authorization',
         'access-control-max-age': '86400',
         vary: 'origin'

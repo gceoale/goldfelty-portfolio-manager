@@ -41,3 +41,13 @@ CREATE TABLE IF NOT EXISTS reports (
   wallets     INTEGER NOT NULL,
   reported_at TEXT    NOT NULL
 );
+
+-- Goldfelty's social autopilot (goldfelty.com/admin/social/): settings,
+-- account sign-ins, the post queue and run history, as JSON. Settings,
+-- sign-ins and pending OAuth states are encrypted by the Worker before they
+-- get here.
+CREATE TABLE IF NOT EXISTS social_kv (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

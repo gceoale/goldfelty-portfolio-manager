@@ -1,4 +1,5 @@
 import { handleRequest } from './accounts.js'
+import { handleSocial } from './social.js'
 
 /**
  * The Cloudflare entry point. Everything it does is wire D1 to the logic in
@@ -86,6 +87,33 @@ export function d1(database) {
         accounts: people.results ?? []
       }
     },
+    async socialGet(keys) {
+      if (!keys.length) return {}
+      const rows = await database
+        .prepare(`SELECT key, value FROM social_kv WHERE key IN (${keys.map(() => '?').join(',')})`)
+        .bind(...keys)
+        .all()
+      return Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]))
+    },
+    async socialPut(key, value, updatedAt) {
+      await database
+        .prepare(
+          'INSERT INTO social_kv (key, value, updated_at) VALUES (?, ?, ?) ' +
+            'ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+        )
+        .bind(key, value, updatedAt)
+        .run()
+    },
+    async socialDelete(key) {
+      await database.prepare('DELETE FROM social_kv WHERE key = ?').bind(key).run()
+    },
+    /** Drops rows under a prefix last written before a time (old sign-in states). */
+    async socialSweep(prefix, before) {
+      await database
+        .prepare('DELETE FROM social_kv WHERE substr(key, 1, length(?)) = ? AND updated_at < ?')
+        .bind(prefix, prefix, before)
+        .run()
+    },
     async insert({ username, email, address }) {
       const id = `gf_${crypto.randomUUID()}`
       await database
@@ -106,7 +134,13 @@ export default {
       })
     }
     try {
-      return await handleRequest(d1(env.DB), request, Date.now(), { adminToken: env.ADMIN_TOKEN })
+      const db = d1(env.DB)
+      const options = { adminToken: env.ADMIN_TOKEN }
+      if (request.method !== 'OPTIONS') {
+        const social = await handleSocial(db, request, Date.now(), options)
+        if (social) return social
+      }
+      return await handleRequest(db, request, Date.now(), options)
     } catch (error) {
       // Never leak internals to the caller; the detail goes to the log tail.
       console.error('unhandled', error)

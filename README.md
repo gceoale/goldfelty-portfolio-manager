@@ -202,8 +202,9 @@ src/main/connections/ browser bridge, Frame, WalletConnect, and one manager over
 src/preload/          the renderer's whole API, as named verbs
 src/renderer/         the UI
 src/shared/           types, chains, tokens, the wallet registry, fee rules
-api/                  accounts for goldfelty.com: Cloudflare Worker + D1
-site/                 goldfelty.com, including /terms, /privacy and /admin
+api/                  accounts for goldfelty.com, and the social autopilot's storage: Cloudflare Worker + D1
+site/                 goldfelty.com, including /terms, /privacy, /admin and /admin/social
+social/               Goldfelty's social autopilot (posts and Shorts), run every half hour by .github/workflows/social.yml
 docs/                 DNS setup, code signing and the security audit
 tests/                unit tests; scripts/e2e.cjs for the whole app
 ```
