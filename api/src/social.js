@@ -70,7 +70,6 @@ const FIELDS = {
   'youtube.windows': 'windows',
   'video.auto': 'bool',
   'video.tts': 'tts',
-  'video.openaiApiKey': SECRET,
   'video.elevenlabsApiKey': SECRET
 }
 const SECRET_FIELDS = Object.keys(FIELDS).filter((k) => FIELDS[k] === SECRET)
@@ -189,7 +188,7 @@ export function checkField(path, value) {
     case 'bool':
       return typeof value === 'boolean' ? [value] : [null, `${path} is on or off.`]
     case 'tts':
-      return ['auto', 'openai', 'elevenlabs', 'none'].includes(value) ? [value] : [null, 'Unknown voice setting.']
+      return ['auto', 'kokoro', 'elevenlabs', 'none'].includes(value) ? [value] : [null, 'Unknown voice setting.']
   }
   return [null, `Unknown setting ${path}.`]
 }
@@ -197,6 +196,8 @@ export function checkField(path, value) {
 /** The settings with every secret replaced by whether it is set. */
 export function redact(config = {}) {
   const out = structuredClone(config)
+  // No longer used; never shown even if an old copy is stored.
+  if (out.video) delete out.video.openaiApiKey
   for (const path of SECRET_FIELDS) {
     const v = getPath(config, path)
     setPath(out, path, v ? { set: true, ends: String(v).slice(-4) } : { set: false })

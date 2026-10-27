@@ -196,7 +196,7 @@ test('pause, resume and pulling an item before it posts', async () => {
 test('field checks and redaction', () => {
   assert.deepEqual(checkField('x.dailyCap', 2), [2])
   assert.equal(checkField('youtube.privacyStatus', 'secret-ish')[1], 'Visibility is public, unlisted or private.')
-  assert.deepEqual(redact({ video: { openaiApiKey: 'sk-abcd1234' } }).video.openaiApiKey, { set: true, ends: '1234' })
+  assert.deepEqual(redact({ video: { elevenlabsApiKey: 'el-abcd1234' } }).video.elevenlabsApiKey, { set: true, ends: '1234' })
 })
 
 test('the queue view shows what is next and what happened', () => {

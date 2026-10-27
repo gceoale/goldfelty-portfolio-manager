@@ -111,9 +111,6 @@
     if (!get(data.config, 'anthropicApiKey.set')) todo.push('Add your Anthropic API key below. Nothing gets written without it.')
     if (!['x', 'reddit', 'youtube'].some(function (p) { return data.connections[p].connected })) todo.push('Connect at least one account.')
     if (!data.config.timezone) todo.push('Check your time zone below and press Save, so posts go out in your daytime.')
-    if (data.connections.youtube.connected && !get(data.config, 'video.openaiApiKey.set') && !get(data.config, 'video.elevenlabsApiKey.set')) {
-      todo.push('Shorts have no voices yet. An OpenAI API key gives every character one.')
-    }
     var box = $('checklist')
     box.textContent = ''
     todo.forEach(function (t) { box.appendChild(el('div', { class: 'callout', text: t })) })
@@ -187,7 +184,7 @@
     })
   }
 
-  var SECRET_INPUTS = ['anthropicApiKey', 'video.openaiApiKey', 'video.elevenlabsApiKey']
+  var SECRET_INPUTS = ['anthropicApiKey', 'video.elevenlabsApiKey']
   var WINDOW_INPUTS = ['x.windows', 'reddit.windows', 'youtube.windows']
 
   function renderSettings() {

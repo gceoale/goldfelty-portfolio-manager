@@ -36,8 +36,8 @@ token):
 
 - Connect X, Reddit and YouTube. Each needs a free developer app; the page
   shows the callback URL to register and where to create it.
-- Keys: Anthropic (needed), OpenAI or ElevenLabs (voices for Shorts), time
-  zone, posting windows, Short visibility.
+- Keys: Anthropic (needed), ElevenLabs (optional; Shorts are voiced for
+  free by Kokoro otherwise), time zone, posting windows, Short visibility.
 - What it may say about Goldfelty (the facts file).
 - Pause/resume, what's coming up (with Remove), what was posted (with likes,
   reposts, replies and views), what was turned down and why, run history.
@@ -182,17 +182,16 @@ goldfelty-social video --queue         # and add it to the YouTube queue
 Videos land in `~/.goldfelty-social/videos/made/` with the script next to
 each one.
 
-**Voices.** The voice decides whether the jokes land. Add one key to
-`config.json`:
+**Voices.** Every character is voiced by Kokoro, a free open-source voice
+model (Apache-2.0) that runs right here, on your computer or the GitHub
+runner: no key, no cost. Each delivery style has its own voice and pace
+(anxious talks fast, deadpan slow). The model, about 90 MB, downloads once
+into `~/.cache/goldfelty-social/models` (the workflow caches it).
 
-- `video.openaiApiKey` (OpenAI `gpt-4o-mini-tts`, which acts out the delivery
-  style; about a cent per video), or
-- `video.elevenlabsApiKey` (most natural; pick voices with
-  `video.elevenlabsVoices`, e.g. `{"deadpan": "<voice id>"}`).
-
-Without a key it uses the computer's own voice (`say` on macOS, Windows
-speech, `espeak-ng` on Linux), which works but isn't funny. `"tts": "none"`
-makes caption-only videos.
+Optional: `video.elevenlabsApiKey` swaps in ElevenLabs voices, which are a
+little more natural (pick voices with `video.elevenlabsVoices`, e.g.
+`{"deadpan": "<voice id>"}`). `"tts": "system"` uses the computer's own voice
+and `"tts": "none"` makes caption-only videos.
 
 **Music.** Put tracks you're allowed to use (YouTube Audio Library is free) in
 `~/.goldfelty-social/music/`; one is mixed in quietly under each video.

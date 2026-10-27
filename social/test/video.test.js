@@ -7,7 +7,7 @@ import { tmpHome, makeTestDeps, freshToken } from './helpers.js';
 import { normalizeConfig } from '../src/config.js';
 import { wordTimes, buildTimeline } from '../src/video/timeline.js';
 import { normalizeSpec, writeVideo, SPEC_SCHEMA } from '../src/video/script.js';
-import { chooseProvider, castVoices, speak, wavDuration, silence } from '../src/video/tts.js';
+import { chooseProvider, castVoices, speak, wavDuration, silence, loadKokoro } from '../src/video/tts.js';
 import { findFfmpeg, makeSfx, mixAudio, playerHtml, launch } from '../src/video/render.js';
 import { loadAssets, SCREENS } from '../src/video/screens.js';
 import { makeVideo, SAMPLE, videoHistory } from '../src/video/make.js';
@@ -111,46 +111,66 @@ test('an inaccurate script is never accepted, however funny', async () => {
   await assert.rejects(writeVideo(client, { config, facts: 'F' }), /funny or accurate/);
 });
 
-test('voices: provider from keys, distinct voices per character', () => {
-  assert.equal(chooseProvider(normalizeConfig({ video: { openaiApiKey: 'k' } })), 'openai');
+test('voices: Kokoro by default, ElevenLabs with a key, distinct voices per character', () => {
+  assert.equal(chooseProvider(normalizeConfig({})), 'kokoro');
   assert.equal(chooseProvider(normalizeConfig({ video: { elevenlabsApiKey: 'k' } })), 'elevenlabs');
-  assert.equal(chooseProvider(normalizeConfig({ video: { tts: 'none', openaiApiKey: 'k' } })), 'none');
+  assert.equal(chooseProvider(normalizeConfig({ video: { tts: 'none', elevenlabsApiKey: 'k' } })), 'none');
+  // An old setting for a provider that's gone falls back to the default.
+  assert.equal(chooseProvider(normalizeConfig({ video: { tts: 'openai' } })), 'kokoro');
   const v = castVoices([
     { id: 'a', voice: 'deadpan' },
     { id: 'b', voice: 'deadpan' },
-  ], 'openai');
-  assert.notEqual(v.a.openai, v.b.openai);
+    { id: 'c', voice: 'anxious' },
+  ]);
+  assert.notEqual(v.a.kokoro, v.b.kokoro);
+  assert.ok(v.c.speed > 1, 'anxious talks faster');
 });
 
-test('OpenAI voices are requested with a delivery style, trimmed and cached', async () => {
-  const mp3 = path.join(home, 'tone.mp3');
-  execFileSync(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', "aevalsrc='if(between(t,0.5,1.5),0.5*sin(2*PI*440*t),0)':s=48000:d=1.8", mp3]);
+let kokoroReady = true;
+try {
+  await loadKokoro();
+} catch {
+  kokoroReady = false;
+}
+
+test('Kokoro speaks a line, free and on this machine', { skip: !kokoroReady && 'voice model not downloadable here', timeout: 120_000 }, async () => {
+  const voices = castVoices([{ id: 'n', voice: 'narrator' }, { id: 'a', voice: 'anxious' }]);
+  const calm = await speak({ text: 'Forty-seven tabs. One spreadsheet. Zero answers.', voice: voices.n, provider: 'kokoro', config, ffmpeg, cacheDir: path.join(home, 'kokoro') });
+  assert.ok(calm.duration > 1.5 && calm.duration < 8, `got ${calm.duration}s`);
+  const fast = await speak({ text: 'Forty-seven tabs. One spreadsheet. Zero answers.', voice: voices.a, provider: 'kokoro', config, ffmpeg, cacheDir: path.join(home, 'kokoro') });
+  assert.ok(fast.duration < calm.duration, 'the anxious voice is quicker');
+});
+
+function toneMp3(name, filter) {
+  const mp3 = path.join(home, name);
+  execFileSync(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', filter, mp3]);
+  return fs.readFileSync(mp3);
+}
+
+test('ElevenLabs voices are requested per character, trimmed and cached', async () => {
   // Half a second of silence, then a one-second tone.
-  const bytes = fs.readFileSync(mp3);
+  const bytes = toneMp3('tone.mp3', "aevalsrc='if(between(t,0.5,1.5),0.5*sin(2*PI*440*t),0)':s=48000:d=1.8");
   const calls = [];
   const fetchImpl = async (url, init) => {
-    calls.push({ url, body: JSON.parse(init.body), auth: init.headers.Authorization });
+    calls.push({ url, body: JSON.parse(init.body), key: init.headers['xi-api-key'] });
     return new Response(bytes, { status: 200 });
   };
-  const cfg = normalizeConfig({ video: { openaiApiKey: 'sk-test' } });
-  const voice = castVoices([{ id: 'n', voice: 'dramatic' }], 'openai').n;
-  const out = await speak({ text: 'In a world', voice, provider: 'openai', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache'), fetchImpl });
-  assert.equal(calls[0].url, 'https://api.openai.com/v1/audio/speech');
-  assert.equal(calls[0].body.model, 'gpt-4o-mini-tts');
-  assert.match(calls[0].body.instructions, /trailer/);
-  assert.equal(calls[0].auth, 'Bearer sk-test');
+  const cfg = normalizeConfig({ video: { elevenlabsApiKey: 'el-test', elevenlabsVoices: { dramatic: 'VOICE123' } } });
+  const voice = castVoices([{ id: 'n', voice: 'dramatic' }]).n;
+  const out = await speak({ text: 'In a world', voice, provider: 'elevenlabs', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache'), fetchImpl });
+  assert.match(calls[0].url, /^https:\/\/api\.elevenlabs\.io\/v1\/text-to-speech\/VOICE123/);
+  assert.equal(calls[0].key, 'el-test');
+  assert.equal(calls[0].body.text, 'In a world');
   assert.ok(out.duration > 0.9 && out.duration < 1.2, `trimmed to the tone, got ${out.duration}`);
-  await speak({ text: 'In a world', voice, provider: 'openai', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache'), fetchImpl });
+  await speak({ text: 'In a world', voice, provider: 'elevenlabs', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache'), fetchImpl });
   assert.equal(calls.length, 1);
 });
 
 test('a voice that comes back silent falls back to a reading-speed pause', async () => {
-  const quiet = path.join(home, 'quiet.mp3');
-  execFileSync(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=mono', '-t', '1', quiet]);
-  const bytes = fs.readFileSync(quiet);
-  const cfg = normalizeConfig({ video: { openaiApiKey: 'sk-test' } });
-  const voice = castVoices([{ id: 'n', voice: 'deadpan' }], 'openai').n;
-  const out = await speak({ text: 'three little words', voice, provider: 'openai', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache2'), fetchImpl: async () => new Response(bytes) });
+  const bytes = toneMp3('quiet.mp3', 'anullsrc=r=48000:cl=mono:d=1');
+  const cfg = normalizeConfig({ video: { elevenlabsApiKey: 'el-test' } });
+  const voice = castVoices([{ id: 'n', voice: 'deadpan' }]).n;
+  const out = await speak({ text: 'three little words', voice, provider: 'elevenlabs', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache2'), fetchImpl: async () => new Response(bytes) });
   assert.ok(Math.abs(out.duration - (0.4 + 3 * 0.36)) < 0.02);
 });
 
