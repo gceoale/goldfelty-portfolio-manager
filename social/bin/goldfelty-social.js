@@ -196,7 +196,7 @@ async function main() {
       const client = spec ? null : makeClient(anthropicKey(deps.config));
       const made = await makeVideo(deps, { client, spec, format: values.format || '' });
       console.log(`\n${made.file}\n"${made.spec.title}" · ${made.duration.toFixed(0)} seconds`);
-      if (made.review) console.log(`Funny ${made.review.funny}/10, hook ${made.review.hook}/10: ${made.review.notes}`);
+      if (made.review) console.log(`Funny ${made.review.funny}/10, hook ${made.review.hook}/10, premium ${made.review.premium}/10: ${made.review.notes}`);
       if (values.queue) {
         const item = app.addVideo(made.file, { title: made.spec.title, description: made.spec.description, premise: made.spec.premise, format: made.spec.format }, deps);
         console.log(`Queued ${item.id} as a draft. Approve it with: goldfelty-social approve ${item.id}`);

@@ -16,7 +16,7 @@ changes:
 | Up to 5 X slots a day, every thread each time | At most 3 X posts a day, at most 1 of them a thread |
 | Reddit posts to any subreddit | Posts only to your profile and subreddits you moderate; anything else becomes a draft for you to post by hand |
 | Expired tokens were never refreshed | Tokens refresh before expiry and on a 401, on all three platforms |
-| AI voice over slides, macOS only | Funny Shorts written by Claude, judged for laughs, voiced, animated with the real app and captioned, on any OS |
+| AI voice over slides, macOS only | Short product films with the real app: written by Claude, judged by a tough editor, animated with camera moves and a clicking cursor, on any OS |
 | macOS only, Swift | Node.js 20+, any OS |
 | claude-sonnet-4-6, raw HTTP | claude-opus-5-5 through the official SDK, with structured output |
 
@@ -36,8 +36,7 @@ token):
 
 - Connect X, Reddit and YouTube. Each needs a free developer app; the page
   shows the callback URL to register and where to create it.
-- Keys: Anthropic (needed), ElevenLabs (optional; Shorts are voiced for
-  free by Kokoro otherwise), time zone, posting windows, Short visibility.
+- Keys: Anthropic (needed), time zone, posting windows, Short visibility.
 - What it may say about Goldfelty (the facts file).
 - Pause/resume, what's coming up (with Remove), what was posted (with likes,
   reposts, replies and views), what was turned down and why, run history.
@@ -147,22 +146,23 @@ Automation); X asks for that on accounts run by software.
 
 ## Shorts
 
-Every day autopilot makes a 30 to 45 second vertical video starring the real
-app:
+Every day autopilot makes a 15 to 22 second vertical video that looks like
+a product film, not a meme:
 
-1. Claude writes a comedy script about everyday self-custody pain (seven
-   wallets and no idea what's in which, 40 tabs to add up one number, the
-   spreadsheet from March) with Goldfelty as the payoff. Formats rotate: text
-   message chats, two-character skits, POV, nature documentary, movie trailer.
-2. A second pass, as a tough comedy editor, scores it for laughs and for the
-   hook, and checks every claim against `facts.md`. Below 7/10 or inaccurate,
-   it's rewritten with the editor's notes (up to three tries).
-3. Each character gets a voice and a delivery style (anxious, smug, deadpan,
-   dramatic, narrator).
-4. It's animated: talking characters with googly eyes, phone chats, a pile-up
-   of tabs, real Goldfelty screens zooming into the part that matters (marked
-   "demo wallets"), word-by-word captions, sound effects, an outro with
-   goldfelty.com. 1080×1920, 30 fps, loudness set for YouTube.
+1. Claude writes a few lines of copy: one dry, true observation about life
+   with too many crypto wallets, resolved by the app. Big serif type on
+   Goldfelty's warm off-white, then real moments in the app.
+2. A second pass, as a tough creative director, scores it for wit, for the
+   hook and for not reading like AI marketing, and checks every claim
+   against `facts.md`. Anything short of the bar is rewritten (up to three
+   tries).
+3. It's animated: type rising out of a mask in Instrument Serif (the
+   site's font), the real app in a Mac window with camera moves, a cursor
+   that clicks through a real flow (connecting a wallet, sending, tracking
+   Exodus, the total adding up), and an end card with goldfelty.com.
+   1080×1920, 30 fps.
+4. Sound design comes with it: cursor clicks, soft whooshes on the cuts, a
+   chime on the end card, and a quiet ambient pad underneath. No voice-over.
 5. It's queued and uploaded as a Short. Views, likes and comments feed into
    the next script.
 
@@ -170,40 +170,30 @@ Try it without spending anything on Claude:
 
 ```sh
 goldfelty-social video --sample
-```
-
-and make a real one:
-
-```sh
-goldfelty-social video                 # Claude writes it; add --format "nature documentary" to steer
+goldfelty-social video                 # Claude writes it; --format "an angle" to steer
 goldfelty-social video --queue         # and add it to the YouTube queue
 ```
 
 Videos land in `~/.goldfelty-social/videos/made/` with the script next to
 each one.
 
-**Voices.** Every character is voiced by Kokoro, a free open-source voice
-model (Apache-2.0) that runs right here, on your computer or the GitHub
-runner: no key, no cost. Each delivery style has its own voice and pace
-(anxious talks fast, deadpan slow). The model, about 90 MB, downloads once
-into `~/.cache/goldfelty-social/models` (the workflow caches it).
+**Music.** Put tracks you're allowed to use (the YouTube Audio Library is
+free) in `~/.goldfelty-social/music/`; one replaces the pad under each video.
 
-Optional: `video.elevenlabsApiKey` swaps in ElevenLabs voices, which are a
-little more natural (pick voices with `video.elevenlabsVoices`, e.g.
-`{"deadpan": "<voice id>"}`). `"tts": "system"` uses the computer's own voice
-and `"tts": "none"` makes caption-only videos.
+**App footage.** The screens in `assets/screens/` come from the app's own
+end-to-end run, drawn at 2x with notifications hidden. To refresh them after
+the app changes:
 
-**Music.** Put tracks you're allowed to use (YouTube Audio Library is free) in
-`~/.goldfelty-social/music/`; one is mixed in quietly under each video.
+```sh
+npm run build && E2E_SCALE=2 E2E_CLEAN=1 SHOT_DIR=/tmp/shots xvfb-run -a -s "-screen 0 2600x1800x24" npm run e2e
+```
 
-**Your own screens.** Save a screenshot as
-`~/.goldfelty-social/screens/overview.png` (or any name in
-`src/video/screens.js`) to replace the bundled one.
+then copy the files named in `src/video/demos.js`.
 
 **Needs.** `npm install` brings Playwright (draws the frames) and ffmpeg. If
-Playwright's browser isn't installed, run `npx playwright install chromium`;
-it can also use your installed Chrome or Edge. A video takes about two minutes
-to render. Turn daily videos off with `"video": {"auto": false}`.
+Playwright's browser isn't installed it uses your Chrome or Edge, or run
+`npx playwright install chromium`. A video takes about a minute to render.
+Turn daily videos off with `"video": {"auto": false}`.
 
 ## Use it by hand
 
@@ -288,6 +278,6 @@ npm test
 They cover the queue, scheduling and caps, token refresh on all three
 platforms, posting (threads, partial failures, Reddit target checks, YouTube
 upload, X images), reading numbers, the Claude requests, autopilot, the video
-script loop, voices, the audio mix, every scene of the video player, a real
+script loop, the sound design, every beat of the video player, a real
 end-to-end render, and the review page's access checks. All network calls are mocked; nothing here has been run against
 the live X, Reddit or YouTube APIs yet.

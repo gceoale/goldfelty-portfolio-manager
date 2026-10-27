@@ -50,12 +50,6 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
-      # Kokoro, the free voice model for Shorts (about 90 MB), kept between runs.
-      - uses: actions/cache@v4
-        if: steps.token.outputs.ready == 'true'
-        with:
-          path: ~/.cache/goldfelty-social/models
-          key: kokoro-82m-v1.0-q8
       # Videos are drawn in the runner's Chrome; install Playwright's own
       # browser only if that's missing.
       - name: Browser for videos

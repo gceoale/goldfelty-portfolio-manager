@@ -23,18 +23,29 @@ export async function findFfmpeg(config) {
   return 'ffmpeg';
 }
 
-// Sound effects, made by ffmpeg itself.
+// Sound design, made by ffmpeg itself: nothing to license.
 const SFX = {
-  pop: ['-f', 'lavfi', '-i', "aevalsrc='0.8*sin(2*PI*t*(900-3000*t))*exp(-38*t)':s=48000:d=0.14"],
-  whoosh: ['-f', 'lavfi', '-i', 'anoisesrc=d=0.5:c=pink:r=48000:a=0.7', '-af', 'bandpass=f=1400:width_type=h:w=2000,afade=t=in:d=0.25,afade=t=out:st=0.25:d=0.25'],
-  ding: ['-f', 'lavfi', '-i', "aevalsrc='0.5*sin(2*PI*1318*t)*exp(-4*t)+0.3*sin(2*PI*1975*t)*exp(-5*t)':s=48000:d=0.9"],
-  boing: ['-f', 'lavfi', '-i', "aevalsrc='0.7*sin(2*PI*t*(220+160*sin(2*PI*9*t)))*exp(-3.5*t)':s=48000:d=0.8"],
-  scratch: ['-f', 'lavfi', '-i', "aevalsrc='0.5*sin(2*PI*t*(1700-3600*t))*(0.6+0.4*sin(2*PI*50*t))':s=48000:d=0.38"],
-  drumroll: ['-f', 'lavfi', '-i', 'anoisesrc=d=1.2:c=white:r=48000:a=0.5', '-af', "volume='0.25+0.75*abs(sin(2*PI*15*t))':eval=frame,lowpass=f=2500,afade=t=out:st=1.0:d=0.2"],
-  fail: ['-f', 'lavfi', '-i', "aevalsrc='0.35*(sin(2*PI*if(lt(t,0.38),392,if(lt(t,0.76),370,if(lt(t,1.14),349,330+7*sin(2*PI*6*t))))*t)+0.4*sin(4*PI*if(lt(t,0.38),392,if(lt(t,0.76),370,if(lt(t,1.14),349,330+7*sin(2*PI*6*t))))*t))*if(gt(t,1.14),exp(-1.3*(t-1.14)),1)':s=48000:d=2.0"],
-  cash: ['-f', 'lavfi', '-i', "aevalsrc='0.4*sin(2*PI*2093*t)*exp(-7*t)+0.45*sin(2*PI*2637*t)*exp(-6*(t-0.09))*gte(t,0.09)':s=48000:d=0.8"],
-  boom: ['-f', 'lavfi', '-i', "aevalsrc='0.9*sin(2*PI*t*(110-70*t))*exp(-5*t)':s=48000:d=0.7"],
+  click: ['-f', 'lavfi', '-i', "aevalsrc='0.55*exp(-900*t)*sin(2*PI*2400*t)+0.35*exp(-260*t)*sin(2*PI*620*t)':s=48000:d=0.08"],
+  pop: ['-f', 'lavfi', '-i', "aevalsrc='0.35*sin(2*PI*t*(480+900*t))*exp(-28*t)':s=48000:d=0.18"],
+  whoosh: ['-f', 'lavfi', '-i', 'anoisesrc=d=0.5:c=pink:r=48000:a=0.5', '-af', 'bandpass=f=900:width_type=h:w=1300,afade=t=in:d=0.22,afade=t=out:st=0.22:d=0.28'],
+  chime: ['-f', 'lavfi', '-i', "aevalsrc='0.22*(sin(2*PI*1046.5*t)+0.6*sin(2*PI*1568*t)+0.3*sin(2*PI*2093*t))*exp(-3*t)':s=48000:d=1.8", '-af', 'aecho=0.8:0.6:90|180:0.25|0.15'],
 };
+const LEVEL = { click: 0.9, pop: 0.5, whoosh: 0.22, chime: 0.55 };
+
+// A quiet, warm pad under the whole video when there's no music of your own.
+export async function makeBed(ffmpeg, seconds, output) {
+  const notes = [110, 164.81, 261.63, 329.63, 493.88];
+  const gains = [1, 0.7, 0.5, 0.4, 0.22];
+  const voice = notes.map((f, i) => `${gains[i]}*sin(2*PI*${f}*t+${i})`).join('+');
+  const expr = `0.07*(${voice})*(0.78+0.22*sin(2*PI*0.13*t))`;
+  await run(ffmpeg, [
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-f', 'lavfi', '-i', `aevalsrc='${expr}':s=48000:d=${seconds.toFixed(2)}`,
+    '-af', `lowpass=f=1600,aecho=0.8:0.7:140|280:0.3|0.2,afade=t=in:d=1.2,afade=t=out:st=${Math.max(0, seconds - 1.6).toFixed(2)}:d=1.6,atrim=0:${seconds.toFixed(2)}`,
+    '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', output,
+  ]);
+  return output;
+}
 
 export async function makeSfx(ffmpeg, dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -57,9 +68,9 @@ function pickMusic(dir, seed) {
   return path.join(dir, tracks[n]);
 }
 
-// Voices, sound effects and optional music, mixed and loudness-normalised
+// Sound effects with your music (or the pad), mixed and loudness-normalised
 // for YouTube (-14 LUFS).
-export async function mixAudio({ ffmpeg, lines, sfxEvents, sfxFiles, duration, musicDir, seed, output }) {
+export async function mixAudio({ ffmpeg, lines = [], sfxEvents, sfxFiles, duration, musicDir, seed, output, bed = null }) {
   const inputs = [];
   const chains = [];
   let n = 0;
@@ -71,13 +82,17 @@ export async function mixAudio({ ffmpeg, lines, sfxEvents, sfxFiles, duration, m
   for (const e of sfxEvents) {
     if (!sfxFiles[e.sfx]) continue;
     inputs.push('-i', sfxFiles[e.sfx]);
-    chains.push(`[${n}:a]adelay=delays=${Math.round(e.at * 1000)}:all=1,volume=${e.sfx === 'whoosh' ? 0.25 : 0.4}[a${n}]`);
+    chains.push(`[${n}:a]adelay=delays=${Math.round(e.at * 1000)}:all=1,volume=${LEVEL[e.sfx] ?? 0.4}[a${n}]`);
     n++;
   }
   const music = pickMusic(musicDir, seed);
   if (music) {
     inputs.push('-stream_loop', '-1', '-i', music);
-    chains.push(`[${n}:a]aformat=sample_rates=48000:channel_layouts=mono,volume=0.11,afade=t=in:d=0.6,afade=t=out:st=${Math.max(0, duration - 1.2).toFixed(2)}:d=1.2[a${n}]`);
+    chains.push(`[${n}:a]aformat=sample_rates=48000:channel_layouts=mono,volume=0.3,afade=t=in:d=0.6,afade=t=out:st=${Math.max(0, duration - 1.2).toFixed(2)}:d=1.2[a${n}]`);
+    n++;
+  } else if (bed) {
+    inputs.push('-i', bed);
+    chains.push(`[${n}:a]volume=0.5[a${n}]`);
     n++;
   }
   if (!n) throw new Error('Nothing to mix.');

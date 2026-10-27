@@ -5,11 +5,10 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { tmpHome, makeTestDeps, freshToken } from './helpers.js';
 import { normalizeConfig } from '../src/config.js';
-import { wordTimes, buildTimeline } from '../src/video/timeline.js';
-import { normalizeSpec, writeVideo, SPEC_SCHEMA } from '../src/video/script.js';
-import { chooseProvider, castVoices, speak, wavDuration, silence, loadKokoro } from '../src/video/tts.js';
-import { findFfmpeg, makeSfx, mixAudio, playerHtml, launch } from '../src/video/render.js';
-import { loadAssets, SCREENS } from '../src/video/screens.js';
+import { parseWords, buildTimeline, DEMO } from '../src/video/timeline.js';
+import { normalizeSpec, writeVideo, SPEC_SCHEMA, MAX_WORDS } from '../src/video/script.js';
+import { DEMOS, DEMO_NAMES, loadAssets } from '../src/video/demos.js';
+import { findFfmpeg, makeSfx, makeBed, mixAudio, playerHtml, launch } from '../src/video/render.js';
 import { makeVideo, SAMPLE, videoHistory } from '../src/video/make.js';
 import { saveQueue, loadQueue } from '../src/queue.js';
 import { autopilotStep, saveState, loadState } from '../src/autopilot.js';
@@ -27,50 +26,65 @@ try {
   canPlay = false;
 }
 
-test('words share a line’s time, longer words taking longer', () => {
-  const w = wordTimes('Hi extraordinary', 1, 3);
-  assert.equal(w[0].start, 1);
-  assert.ok(Math.abs(w.at(-1).end - 3) < 1e-9);
-  assert.ok(w[1].end - w[1].start > w[0].end - w[0].start);
+function seconds(file) {
+  let err = '';
+  try {
+    execFileSync(ffmpeg, ['-hide_banner', '-i', file], { stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    err = String(e.stderr);
+  }
+  const m = /Duration: (\d+):(\d+):([\d.]+)/.exec(err);
+  return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0;
+}
+
+test('emphasis: starred words are marked, across two words too', () => {
+  assert.deepEqual(parseWords('Every wallet. *One app.*'), [
+    { w: 'Every', em: false },
+    { w: 'wallet.', em: false },
+    { w: 'One', em: true },
+    { w: 'app.', em: true },
+  ]);
+  assert.deepEqual(parseWords('a *b* c').map((x) => x.em), [false, true, false]);
 });
 
-test('the timeline runs scenes back to back with sound effects', () => {
+test('the timeline runs beats back to back, with sound on the cuts and clicks', () => {
   const spec = normalizeSpec(sample);
-  const durations = spec.scenes.map((s) => s.lines.map(() => 1.5));
-  const tl = buildTimeline(spec, durations);
-  for (let i = 1; i < tl.scenes.length; i++) assert.equal(tl.scenes[i].start, tl.scenes[i - 1].end);
-  assert.ok(tl.duration > tl.scenes.at(-1).end - 0.01);
-  const chat = tl.scenes.find((s) => s.kind === 'chat');
-  assert.equal(tl.sfx.filter((e) => e.sfx === 'pop' && e.at >= chat.start && e.at < chat.end).length, chat.lines.length);
-  assert.ok(tl.sfx.some((e) => e.sfx === 'boom'));
-  assert.ok(tl.sfx.some((e) => e.sfx === 'fail'));
-  assert.ok(tl.scenes.find((s) => s.kind === 'outro').end - tl.scenes.find((s) => s.kind === 'outro').start >= 2.8);
+  const tl = buildTimeline(spec, DEMOS);
+  for (let i = 1; i < tl.beats.length; i++) assert.equal(tl.beats[i].start, tl.beats[i - 1].end);
+  assert.ok(tl.duration > 14 && tl.duration < 24, `got ${tl.duration}s`);
+  const connect = tl.beats.find((b) => b.demo === 'connect');
+  assert.ok(tl.sfx.some((e) => e.sfx === 'click' && Math.abs(e.at - (connect.start + DEMO.click)) < 1e-9));
+  assert.ok(tl.sfx.some((e) => e.sfx === 'pop'), 'a swap without a click pops');
+  assert.equal(tl.sfx.filter((e) => e.sfx === 'chime').length, 1);
 });
 
-test('scripts are tidied: unknown speakers, missing screens, no outro', () => {
+test('scripts are tidied: one end card last, demo beats need a real demo', () => {
   const spec = normalizeSpec({
-    title: 'T <b>', description: 'D', premise: 'p', format: 'f',
-    cast: [{ id: 'a', name: 'A', voice: 'anxious', look: 'person', color: 'blue' }],
-    scenes: [
-      { kind: 'hook', caption: 'Hi', screen: 'none', hotspot: 'none', chaos_items: [], lines: [{ speaker: 'zzz', text: 'Hello', sfx: 'none' }] },
-      { kind: 'app', caption: '', screen: 'nope', hotspot: 'none', chaos_items: [], lines: [{ speaker: 'a', text: 'Look', sfx: 'laser' }] },
-      { kind: 'dialogue', caption: '', screen: 'none', hotspot: 'none', chaos_items: [], lines: [{ speaker: 'a', text: 'Yes', sfx: 'none' }] },
+    title: 'T <b>*x*', description: 'D', premise: 'p',
+    beats: [
+      { kind: 'end', text: 'Early end', demo: 'none' },
+      { kind: 'type', text: 'Hook line', demo: 'connect' },
+      { kind: 'demo', text: 'No demo', demo: 'none' },
+      { kind: 'demo', text: 'Real one', demo: 'send' },
     ],
   });
-  assert.equal(spec.scenes[0].lines[0].speaker, 'a');
-  assert.equal(spec.scenes[1].screen, 'overview');
-  assert.equal(spec.scenes[1].lines[0].sfx, 'none');
-  assert.equal(spec.scenes.at(-1).kind, 'outro');
-  assert.equal(spec.title, 'T b');
+  assert.deepEqual(spec.beats.map((b) => b.kind), ['type', 'demo', 'end']);
+  assert.equal(spec.beats[0].demo, 'none');
+  assert.equal(spec.beats.at(-1).text, 'Early end');
+  assert.equal(spec.title, 'T bx');
   assert.match(spec.description, /goldfelty\.com/);
-  assert.throws(() => normalizeSpec({ cast: [], scenes: [] }), /no cast/);
+  assert.throws(() => normalizeSpec({ beats: [{ kind: 'type', text: 'one', demo: 'none' }] }), /too short/);
+  assert.throws(() => normalizeSpec({ beats: [{ kind: 'type', text: 'w '.repeat(MAX_WORDS + 5), demo: 'none' }, { kind: 'type', text: 'b', demo: 'none' }] }), /too long/);
 });
 
-test('the script schema only allows real screens and hotspots', () => {
-  const scene = SPEC_SCHEMA.properties.scenes.items.properties;
-  assert.deepEqual(scene.screen.enum.slice(1).sort(), Object.keys(SCREENS).sort());
-  for (const s of Object.values(SCREENS)) {
-    for (const h of Object.keys(s.hotspots)) assert.ok(scene.hotspot.enum.includes(h));
+test('the script schema only allows real demos, and every demo has its screens', () => {
+  const beat = SPEC_SCHEMA.properties.beats.items.properties;
+  assert.deepEqual(beat.demo.enum.slice(1).sort(), [...DEMO_NAMES].sort());
+  const assets = loadAssets(DEMO_NAMES);
+  for (const d of Object.values(DEMOS)) {
+    assert.ok(assets.screens[d.from] && assets.screens[d.to]);
+    for (const [x, y, w, h] of [d.focus, d.after]) assert.ok(x >= 0 && y >= 0 && x + w <= 1240 && y + h <= 800);
+    if (d.click) assert.ok(d.click[0] < 1240 && d.click[1] < 800);
   }
 });
 
@@ -78,155 +92,71 @@ function fakeClient(answers) {
   const requests = [];
   return {
     requests,
-    beta: {
-      messages: {
-        create: async (req) => {
-          requests.push(req);
-          const body = answers.shift();
-          return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(body) }] };
-        },
-      },
-    },
+    beta: { messages: { create: async (req) => { requests.push(req); return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answers.shift()) }] }; } } },
   };
 }
 
-test('a script that isn’t funny enough is rewritten with the editor’s notes', async () => {
+test('a script that isn’t sharp enough is rewritten with the editor’s notes', async () => {
   const client = fakeClient([
     sample,
-    { funny: 5, hook: 8, accurate: true, publish: false, notes: 'The chat joke needs a sharper turn.' },
+    { funny: 8, hook: 8, premium: 5, accurate: true, publish: false, notes: 'Line two reads like an ad. Cut "seamless".' },
     sample,
-    { funny: 8, hook: 8, accurate: true, publish: true, notes: 'Good.' },
+    { funny: 8, hook: 8, premium: 9, accurate: true, publish: true, notes: 'Good.' },
   ]);
   const { spec, review } = await writeVideo(client, { config, facts: 'F' });
-  assert.equal(review.funny, 8);
+  assert.equal(review.premium, 9);
   assert.equal(spec.title, sample.title);
-  assert.equal(client.requests.length, 4);
-  assert.match(client.requests[2].messages[0].content, /sharper turn/);
-  assert.equal(client.requests[1].output_config.effort, 'high');
+  assert.match(client.requests[2].messages[0].content, /reads like an ad/);
+  assert.match(client.requests[0].system, /no voice-over/);
 });
 
-test('an inaccurate script is never accepted, however funny', async () => {
-  const bad = { funny: 10, hook: 10, accurate: false, publish: true, notes: 'Claims an audit.' };
+test('an inaccurate script is never accepted, however good', async () => {
+  const bad = { funny: 10, hook: 10, premium: 10, accurate: false, publish: true, notes: 'Claims an audit.' };
   const client = fakeClient([sample, bad, sample, bad, sample, bad]);
-  await assert.rejects(writeVideo(client, { config, facts: 'F' }), /funny or accurate/);
+  await assert.rejects(writeVideo(client, { config, facts: 'F' }), /good enough/);
 });
 
-test('voices: Kokoro by default, ElevenLabs with a key, distinct voices per character', () => {
-  assert.equal(chooseProvider(normalizeConfig({})), 'kokoro');
-  assert.equal(chooseProvider(normalizeConfig({ video: { elevenlabsApiKey: 'k' } })), 'elevenlabs');
-  assert.equal(chooseProvider(normalizeConfig({ video: { tts: 'none', elevenlabsApiKey: 'k' } })), 'none');
-  // An old setting for a provider that's gone falls back to the default.
-  assert.equal(chooseProvider(normalizeConfig({ video: { tts: 'openai' } })), 'kokoro');
-  const v = castVoices([
-    { id: 'a', voice: 'deadpan' },
-    { id: 'b', voice: 'deadpan' },
-    { id: 'c', voice: 'anxious' },
-  ]);
-  assert.notEqual(v.a.kokoro, v.b.kokoro);
-  assert.ok(v.c.speed > 1, 'anxious talks faster');
-});
-
-let kokoroReady = true;
-try {
-  await loadKokoro();
-} catch {
-  kokoroReady = false;
-}
-
-test('Kokoro speaks a line, free and on this machine', { skip: !kokoroReady && 'voice model not downloadable here', timeout: 120_000 }, async () => {
-  const voices = castVoices([{ id: 'n', voice: 'narrator' }, { id: 'a', voice: 'anxious' }]);
-  const calm = await speak({ text: 'Forty-seven tabs. One spreadsheet. Zero answers.', voice: voices.n, provider: 'kokoro', config, ffmpeg, cacheDir: path.join(home, 'kokoro') });
-  assert.ok(calm.duration > 1.5 && calm.duration < 8, `got ${calm.duration}s`);
-  const fast = await speak({ text: 'Forty-seven tabs. One spreadsheet. Zero answers.', voice: voices.a, provider: 'kokoro', config, ffmpeg, cacheDir: path.join(home, 'kokoro') });
-  assert.ok(fast.duration < calm.duration, 'the anxious voice is quicker');
-});
-
-function toneMp3(name, filter) {
-  const mp3 = path.join(home, name);
-  execFileSync(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', filter, mp3]);
-  return fs.readFileSync(mp3);
-}
-
-test('ElevenLabs voices are requested per character, trimmed and cached', async () => {
-  // Half a second of silence, then a one-second tone.
-  const bytes = toneMp3('tone.mp3', "aevalsrc='if(between(t,0.5,1.5),0.5*sin(2*PI*440*t),0)':s=48000:d=1.8");
-  const calls = [];
-  const fetchImpl = async (url, init) => {
-    calls.push({ url, body: JSON.parse(init.body), key: init.headers['xi-api-key'] });
-    return new Response(bytes, { status: 200 });
-  };
-  const cfg = normalizeConfig({ video: { elevenlabsApiKey: 'el-test', elevenlabsVoices: { dramatic: 'VOICE123' } } });
-  const voice = castVoices([{ id: 'n', voice: 'dramatic' }]).n;
-  const out = await speak({ text: 'In a world', voice, provider: 'elevenlabs', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache'), fetchImpl });
-  assert.match(calls[0].url, /^https:\/\/api\.elevenlabs\.io\/v1\/text-to-speech\/VOICE123/);
-  assert.equal(calls[0].key, 'el-test');
-  assert.equal(calls[0].body.text, 'In a world');
-  assert.ok(out.duration > 0.9 && out.duration < 1.2, `trimmed to the tone, got ${out.duration}`);
-  await speak({ text: 'In a world', voice, provider: 'elevenlabs', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache'), fetchImpl });
-  assert.equal(calls.length, 1);
-});
-
-test('a voice that comes back silent falls back to a reading-speed pause', async () => {
-  const bytes = toneMp3('quiet.mp3', 'anullsrc=r=48000:cl=mono:d=1');
-  const cfg = normalizeConfig({ video: { elevenlabsApiKey: 'el-test' } });
-  const voice = castVoices([{ id: 'n', voice: 'deadpan' }]).n;
-  const out = await speak({ text: 'three little words', voice, provider: 'elevenlabs', config: cfg, ffmpeg, cacheDir: path.join(home, 'cache2'), fetchImpl: async () => new Response(bytes) });
-  assert.ok(Math.abs(out.duration - (0.4 + 3 * 0.36)) < 0.02);
-});
-
-test('silent mode gives every line a reading-speed duration', async () => {
-  const out = await speak({ text: 'one two three four five', voice: {}, provider: 'none', config, ffmpeg, cacheDir: path.join(home, 'cache') });
-  assert.ok(Math.abs(out.duration - (0.4 + 5 * 0.36)) < 0.02);
-  assert.ok(Math.abs(wavDuration(out.file) - out.duration) < 0.02);
-});
-
-test('sound effects and the mix come out at the right length', async () => {
+test('sound design and the pad mix to the video’s length', async () => {
   const sfx = await makeSfx(ffmpeg, path.join(home, 'sfx'));
-  for (const f of Object.values(sfx)) assert.ok(wavDuration(f) > 0.1);
-  const a = path.join(home, 'a.wav');
-  await silence(ffmpeg, 1, a);
+  for (const name of ['click', 'pop', 'whoosh', 'chime']) assert.ok(seconds(sfx[name]) > 0.05, name);
+  const bed = await makeBed(ffmpeg, 6, path.join(home, 'bed.wav'));
+  assert.ok(Math.abs(seconds(bed) - 6) < 0.1);
   const out = path.join(home, 'mix.m4a');
-  await mixAudio({ ffmpeg, lines: [{ file: a, start: 0.5 }], sfxEvents: [{ sfx: 'pop', at: 0.2 }, { sfx: 'boom', at: 1 }], sfxFiles: sfx, duration: 3, musicDir: null, seed: 's', output: out });
-  const probe = execFileSync(ffmpeg, ['-hide_banner', '-i', out, '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
-  assert.ok(fs.statSync(out).size > 1000, probe);
+  await mixAudio({ ffmpeg, sfxEvents: [{ sfx: 'click', at: 1 }, { sfx: 'chime', at: 4 }], sfxFiles: sfx, duration: 6, musicDir: null, seed: 's', output: out, bed });
+  assert.ok(Math.abs(seconds(out) - 6) < 0.15);
 });
 
-test('the player page draws every scene of the sample without errors', { skip: !canPlay && 'no browser' }, async () => {
+test('the player draws every beat of the sample without errors', { skip: !canPlay && 'no browser' }, async () => {
   const spec = normalizeSpec(sample);
-  const tl = buildTimeline(spec, spec.scenes.map((s) => s.lines.map(() => 1.2)));
-  const screens = [...new Set(['overview', ...spec.scenes.map((s) => s.screen).filter((s) => s !== 'none')])];
+  const tl = buildTimeline(spec, DEMOS);
   const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.setContent(playerHtml({ timeline: tl, cast: spec.cast, assets: loadAssets(screens) }));
+  await page.setContent(playerHtml({ timeline: tl, assets: loadAssets([...new Set(spec.beats.map((b) => b.demo))]) }));
   assert.ok(Math.abs((await page.evaluate(() => window.ready())) - tl.duration) < 1e-6);
-  for (const s of tl.scenes) {
-    for (const t of [s.start + 0.01, (s.start + s.end) / 2, s.end - 0.02]) {
-      await page.evaluate((x) => window.renderAt(x), t);
-    }
+  for (const b of tl.beats) {
+    await page.evaluate((x) => window.renderAt(x), b.start + 1.2);
     const text = await page.locator('#stage').innerText();
-    if (s.kind === 'chat') assert.match(text, /3 people/);
-    if (s.kind === 'outro') assert.match(text, /goldfelty\.com/);
+    assert.ok(text.includes(b.words[0].w), `${b.kind} shows its line`);
+    if (b.kind === 'end') assert.match(text, /goldfelty\.com/);
+    if (b.kind === 'demo') assert.match(text, /demo wallets/i);
+    if (b.kind === 'demo' && DEMOS[b.demo].click) {
+      await page.evaluate((x) => window.renderAt(x), b.start + DEMO.click);
+      assert.equal(await page.locator('#cursor').count(), 1);
+    }
   }
   await browser.close();
   assert.deepEqual(errors, []);
 });
 
 test('a short video renders end to end', { skip: !canPlay && 'no browser', timeout: 120_000 }, async () => {
-  const spec = {
-    ...sample,
-    scenes: [sample.scenes[0], sample.scenes.at(-1)].map((s) => ({ ...s, lines: s.lines.slice(0, 1) })),
-  };
-  // normalizeSpec needs three scenes; add a short punchline.
-  spec.scenes.splice(1, 0, { kind: 'punchline', caption: 'Wow', screen: 'none', hotspot: 'none', chaos_items: [], lines: [] });
-  const { deps } = makeTestDeps({ config: { video: { tts: 'none' } }, now: Date.now() });
+  const spec = { ...sample, beats: [sample.beats[0], sample.beats[2], sample.beats.at(-1)] };
+  const { deps } = makeTestDeps({ now: Date.now() });
   const made = await makeVideo(deps, { spec, outDir: path.join(home, 'out') });
-  const info = execFileSync(ffmpeg, ['-hide_banner', '-i', made.file, '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
   assert.ok(fs.existsSync(made.file));
-  assert.ok(made.duration > 5 && made.duration < 15);
+  assert.ok(Math.abs(seconds(made.file) - made.duration) < 0.3);
   assert.ok(fs.existsSync(made.file.replace(/\.mp4$/, '.json')));
-  assert.ok(info !== undefined);
 });
 
 test('video history steers new scripts away from repeats and toward what worked', () => {

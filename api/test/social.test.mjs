@@ -119,7 +119,8 @@ test('connecting: a sign-in link, then the callback stores the account', async (
   assert.equal(view.body.connections.x.username, 'goldfelty')
   assert.doesNotMatch(JSON.stringify(view.body), /"AT"|"RT"/)
   const raw = database.raw.prepare("SELECT value FROM social_kv WHERE key = 'tokens:x'").get().value
-  assert.doesNotMatch(raw, /AT|RT|goldfelty/)
+  // Random ciphertext can contain any short string, so look for whole words.
+  assert.doesNotMatch(raw, /access_token|refresh_token|goldfelty/)
 
   const state2 = await call('GET', '/v1/admin/social/state')
   assert.equal(state2.body.tokens.x.access_token, 'AT')
@@ -196,7 +197,8 @@ test('pause, resume and pulling an item before it posts', async () => {
 test('field checks and redaction', () => {
   assert.deepEqual(checkField('x.dailyCap', 2), [2])
   assert.equal(checkField('youtube.privacyStatus', 'secret-ish')[1], 'Visibility is public, unlisted or private.')
-  assert.deepEqual(redact({ video: { elevenlabsApiKey: 'el-abcd1234' } }).video.elevenlabsApiKey, { set: true, ends: '1234' })
+  assert.deepEqual(redact({ x: { clientSecret: 'xs-abcd1234' } }).x.clientSecret, { set: true, ends: '1234' })
+  assert.equal(redact({ video: { elevenlabsApiKey: 'old-key-1' } }).video.elevenlabsApiKey, undefined)
 })
 
 test('the queue view shows what is next and what happened', () => {

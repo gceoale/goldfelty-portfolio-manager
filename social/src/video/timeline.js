@@ -1,48 +1,55 @@
-// Turns a script plus the length of each spoken line into exact timings for
-// scenes, lines, words and sound effects.
+// Turns a script into exact timings for beats, words and sound effects.
 
-const MIN_SCENE = { hook: 1.6, chaos: 2.4, punchline: 1.4, outro: 2.8, app: 2.0 };
-const LINE_GAP = 0.14;
-const SCENE_TAIL = 0.3;
+// Inside a demo beat, seconds from its start. The player uses the same.
+export const DEMO = {
+  enter: 0.4, // window settles in
+  focus: 1.05, // camera reaches the area of interest
+  click: 1.7, // cursor clicks (demos with a click)
+  swap: 1.5, // screens cross-fade (demos without one)
+  after: 2.75, // camera reaches the result
+};
 
-// Spreads a line's duration over its words, longer words taking longer.
-export function wordTimes(text, start, end) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const weights = words.map((w) => w.replace(/[^\p{L}\p{N}]/gu, '').length + 2);
-  const total = weights.reduce((a, b) => a + b, 0) || 1;
-  let t = start;
-  return words.map((w, i) => {
-    const d = ((end - start) * weights[i]) / total;
-    const out = { w, start: t, end: t + d };
-    t += d;
-    return out;
-  });
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+// "Every wallet. *One app.*" -> words, with the starred ones marked.
+export function parseWords(text) {
+  const out = [];
+  let em = false;
+  for (const raw of String(text).split(/\s+/).filter(Boolean)) {
+    const opens = raw.startsWith('*');
+    const closes = raw.endsWith('*') && raw.length > 1;
+    if (opens) em = true;
+    out.push({ w: raw.replace(/\*/g, ''), em });
+    if (closes) em = false;
+  }
+  return out.filter((x) => x.w);
 }
 
-// durations[sceneIndex][lineIndex] = seconds of audio for that line.
-export function buildTimeline(spec, durations) {
+export function beatDuration(beat, demos) {
+  const n = parseWords(beat.text).length;
+  if (beat.kind === 'type') return clamp(1.3 + 0.3 * n, 1.7, 3.4);
+  if (beat.kind === 'demo') return demos[beat.demo]?.click ? 3.8 : 3.2;
+  return 3.0;
+}
+
+export function buildTimeline(spec, demos) {
   let t = 0;
-  const scenes = [];
+  const beats = [];
   const sfx = [];
-  spec.scenes.forEach((scene, si) => {
+  spec.beats.forEach((beat, i) => {
     const start = t;
-    t += si === 0 ? 0.25 : 0.2;
-    if (scene.kind === 'chaos') t += 0.6; // let the pile-up start before anyone talks
-    const lines = scene.lines.map((line, li) => {
-      const d = durations[si]?.[li] ?? 1;
-      const ls = t;
-      t += d;
-      const out = { ...line, start: ls, end: t, words: wordTimes(line.text, ls, t) };
-      const effect = line.sfx !== 'none' ? line.sfx : scene.kind === 'chat' ? 'pop' : null;
-      if (effect) sfx.push({ sfx: effect, at: Math.max(0, ls - 0.04) });
-      t += LINE_GAP;
-      return out;
-    });
-    t += SCENE_TAIL;
-    if (t - start < (MIN_SCENE[scene.kind] || 1)) t = start + (MIN_SCENE[scene.kind] || 1);
-    if (scene.kind === 'punchline') sfx.push({ sfx: 'boom', at: start + 0.05 });
-    if (scene.kind === 'app' || scene.kind === 'outro') sfx.push({ sfx: 'whoosh', at: start });
-    scenes.push({ ...scene, index: si, start, end: t, lines });
+    const dur = beatDuration(beat, demos);
+    const words = parseWords(beat.text);
+    beats.push({ ...beat, index: i, start, end: start + dur, words });
+    if (beat.kind === 'type') sfx.push({ sfx: 'whoosh', at: start });
+    if (beat.kind === 'demo') {
+      sfx.push({ sfx: 'whoosh', at: start + 0.35 });
+      const d = demos[beat.demo];
+      if (d?.click) sfx.push({ sfx: 'click', at: start + DEMO.click });
+      else if (d && d.from !== d.to) sfx.push({ sfx: 'pop', at: start + DEMO.swap });
+    }
+    if (beat.kind === 'end') sfx.push({ sfx: 'chime', at: start + 0.2 });
+    t += dur;
   });
-  return { duration: t + 0.2, scenes, sfx };
+  return { duration: t, beats, sfx, demo: DEMO };
 }
