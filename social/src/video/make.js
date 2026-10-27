@@ -42,8 +42,8 @@ export async function makeVideo(deps, { client, spec, format = '', log = deps.lo
     ({ spec: finalSpec, review } = await writeVideo(client, { config, facts: loadFacts(), recentPremises, lessons, format, log }));
   }
   const ffmpeg = await findFfmpeg(config);
-  const provider = chooseProvider(config, { cloud: Boolean(deps.cloud) });
-  const voices = castVoices(finalSpec.cast, provider);
+  const provider = chooseProvider(config);
+  const voices = castVoices(finalSpec.cast);
   const cacheDir = dataPath('cache/voices');
   log(`Voices: ${provider === 'none' ? 'none (captions only)' : provider}`);
 

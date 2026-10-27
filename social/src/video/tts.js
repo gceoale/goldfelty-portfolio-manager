@@ -1,8 +1,9 @@
-// Voices for the characters. OpenAI or ElevenLabs if you have a key (much
-// funnier delivery), otherwise the computer's own voice, otherwise silent
-// with captions.
+// Voices for the characters. By default Kokoro, a free open-source voice
+// model that runs on this machine (no key, no cost); ElevenLabs if you add a
+// key; the computer's own voice or captions only if you choose them.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -10,15 +11,19 @@ import { failure } from '../http.js';
 
 const run = promisify(execFile);
 
-const OPENAI = {
-  narrator: ['echo', 'Warm, clear narrator with great comic timing, like a nature documentary host who finds this hilarious.'],
-  upbeat: ['nova', 'Bright, upbeat, quick and playful.'],
-  deadpan: ['onyx', 'Completely deadpan, dry and unimpressed. A beat of silence before punchlines.'],
-  dramatic: ['fable', 'Wildly over-the-top dramatic, like a movie trailer voice-over.'],
-  anxious: ['ash', 'Nervous, fast and slightly panicked, in a funny way.'],
-  smug: ['sage', 'Smug and self-satisfied, a little condescending, playful.'],
+export const PROVIDERS = ['auto', 'kokoro', 'elevenlabs', 'system', 'none'];
+
+// Kokoro voices per delivery style, with a speaking speed that sells it.
+const KOKORO = {
+  narrator: ['bm_george', 1.0],
+  upbeat: ['af_heart', 1.08],
+  deadpan: ['am_michael', 0.92],
+  dramatic: ['am_fenrir', 0.88],
+  anxious: ['af_bella', 1.18],
+  smug: ['bf_emma', 1.0],
 };
-const OPENAI_SPARE = ['coral', 'ballad', 'verse', 'shimmer', 'alloy'];
+const KOKORO_SPARE = ['am_puck', 'af_sarah', 'bm_lewis', 'am_eric', 'af_aoede', 'bf_isabella', 'am_adam'];
+const KOKORO_MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 
 // ElevenLabs premade voices; override with video.elevenlabsVoices in config.
 const ELEVEN = {
@@ -33,38 +38,50 @@ const ELEVEN = {
 const SAY = { narrator: 'Daniel', upbeat: 'Samantha', deadpan: 'Fred', dramatic: 'Daniel', anxious: 'Karen', smug: 'Moira' };
 const ESPEAK = { narrator: 'en-gb+m3', upbeat: 'en-us+f3', deadpan: 'en-us+m1', dramatic: 'en-gb+m7', anxious: 'en-us+f4', smug: 'en-us+m3' };
 
-// In the cloud there is no decent built-in voice, so without a key the
-// video is captions only.
-export function chooseProvider(cfg, { cloud = false } = {}) {
+export function chooseProvider(cfg) {
   const want = cfg.video?.tts || 'auto';
-  if (want !== 'auto' && !(cloud && want === 'system')) return want;
-  if (cfg.video?.openaiApiKey || process.env.OPENAI_API_KEY) return 'openai';
+  if (want !== 'auto' && PROVIDERS.includes(want)) return want;
   if (cfg.video?.elevenlabsApiKey || process.env.ELEVENLABS_API_KEY) return 'elevenlabs';
-  return cloud ? 'none' : 'system';
+  return 'kokoro';
 }
 
-// Gives every cast member a distinct voice for the provider.
-export function castVoices(cast, provider) {
+// Gives every cast member a distinct voice.
+export function castVoices(cast) {
   const used = new Set();
   const out = {};
   for (const c of cast) {
-    let [voice, style] = OPENAI[c.voice] || OPENAI.narrator;
-    if (provider === 'openai' && used.has(voice)) voice = OPENAI_SPARE.find((v) => !used.has(v)) || voice;
+    let [voice, speed] = KOKORO[c.voice] || KOKORO.narrator;
+    if (used.has(voice)) voice = KOKORO_SPARE.find((v) => !used.has(v)) || voice;
     used.add(voice);
-    out[c.id] = { preset: c.voice, openai: voice, style };
+    out[c.id] = { preset: c.voice, kokoro: voice, speed };
   }
   return out;
 }
 
-async function openaiSpeech(text, v, cfg, fetchImpl, file) {
-  const key = cfg.video?.openaiApiKey || process.env.OPENAI_API_KEY;
-  const res = await fetchImpl('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice: v.openai, input: text, instructions: v.style, response_format: 'mp3' }),
-  });
-  if (!res.ok) throw failure('OpenAI voice', { status: res.status, text: await res.text(), json: null });
-  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+export function modelDir() {
+  return process.env.GOLDFELTY_SOCIAL_MODELS || path.join(os.homedir(), '.cache', 'goldfelty-social', 'models');
+}
+
+// The model (about 90 MB) downloads once, then loads in a couple of seconds.
+let kokoro = null;
+export function loadKokoro() {
+  if (!kokoro) {
+    kokoro = (async () => {
+      const [{ KokoroTTS }, { env }] = await Promise.all([import('kokoro-js'), import('@huggingface/transformers')]);
+      env.cacheDir = modelDir();
+      return KokoroTTS.from_pretrained(KOKORO_MODEL, { dtype: 'q8', device: 'cpu' });
+    })().catch((err) => {
+      kokoro = null;
+      throw new Error(`Couldn't load the Kokoro voice model: ${err.message}`);
+    });
+  }
+  return kokoro;
+}
+
+async function kokoroSpeech(text, v, file) {
+  const tts = await loadKokoro();
+  const audio = await tts.generate(text, { voice: v.kokoro, speed: v.speed });
+  await audio.save(file);
 }
 
 async function elevenSpeech(text, v, cfg, fetchImpl, file) {
@@ -137,8 +154,9 @@ export async function speak({ text, voice, provider, config, ffmpeg, cacheDir, f
   const wav = path.join(cacheDir, `${key}.wav`);
   if (fs.existsSync(wav)) return { file: wav, duration: wavDuration(wav) };
   if (provider === 'none') return { file: wav, duration: await silence(ffmpeg, readingTime(text), wav) };
-  const raw = path.join(cacheDir, `${key}.raw.${provider === 'system' ? (process.platform === 'darwin' ? 'aiff' : 'wav') : 'mp3'}`);
-  if (provider === 'openai') await openaiSpeech(text, voice, config, fetchImpl, raw);
+  const ext = provider === 'elevenlabs' ? 'mp3' : provider === 'system' && process.platform === 'darwin' ? 'aiff' : 'wav';
+  const raw = path.join(cacheDir, `${key}.raw.${ext}`);
+  if (provider === 'kokoro') await kokoroSpeech(text, voice, raw);
   else if (provider === 'elevenlabs') await elevenSpeech(text, voice, config, fetchImpl, raw);
   else await systemSpeech(text, voice, raw);
   let duration = await toWav(ffmpeg, raw, wav);
