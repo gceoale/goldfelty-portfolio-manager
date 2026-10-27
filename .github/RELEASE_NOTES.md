@@ -1,3 +1,13 @@
+## Goldfelty 1.2.3
+
+**Sharing your total works reliably.** If you turned on "Share my portfolio
+total", the app used to skip sending it whenever one network or price failed to
+load, which could mean it never went out. Now an incomplete total is still
+shared if nothing has gone out for a day, and a complete one replaces it as soon
+as it loads.
+
+If you have 1.2.0 or later, the app updates itself to this version.
+
 ## Goldfelty 1.2.2
 
 **More wallets connect.** Every supported wallet was tested against its real

@@ -13,7 +13,7 @@ batch of drafts will use it.
 - macOS, Windows and Linux, on ARM and Intel. Download: https://goldfelty.com
 - The code is open source (Apache-2.0):
   https://github.com/gceoale/goldfelty-portfolio-manager
-- Current version: 1.2.2. It updates itself from 1.2.0 on.
+- Current version: 1.2.3. It updates itself from 1.2.0 on.
 
 ## Wallets
 

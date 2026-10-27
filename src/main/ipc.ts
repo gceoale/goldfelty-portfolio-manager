@@ -26,6 +26,7 @@ import type { Updater } from './updater.ts'
 import { CHAINS, TOKENS, TOKEN_BY_KEY, getChain } from '../shared/chains.ts'
 import { WALLET_REGISTRY } from '../shared/walletRegistry.ts'
 import { canSign } from '../shared/types.ts'
+import { reportDue } from './sharing.ts'
 import type { AppStatus, Balance, HistoryRange, Portfolio, Result, Wallet, WalletConnection } from '../shared/types.ts'
 
 /**
@@ -196,15 +197,16 @@ function publicResult(result: { account: unknown; linked: boolean; message?: str
   return { account: result.account, linked: result.linked, message: result.message }
 }
 
-const REPORT_EVERY_MS = 6 * 3600_000
+let lastWasPartial = false
 
 /** Share the total, if the user turned that on, at most every six hours. */
-function maybeReport(runtime: Runtime, total: number): void {
+function maybeReport(runtime: Runtime, total: number, degraded: boolean): void {
   const { store } = runtime
   const token = store.accountToken
   if (!store.settings.shareTotals || !token || !store.account?.linked) return
-  if (Date.now() - store.lastReportAt < REPORT_EVERY_MS) return
+  if (!reportDue({ now: Date.now(), lastReportAt: store.lastReportAt, lastWasPartial, degraded })) return
   store.markReported(Date.now())
+  lastWasPartial = degraded
   const wallets = store.activeWallets().filter((w) => canSign(w.kind)).length
   void reportTotals(token, { value: total, currency: store.settings.currency, wallets }).catch(() => {
     // Try again at the next refresh rather than in six hours.
@@ -544,7 +546,7 @@ export function registerIpc(runtime: Runtime): void {
     const portfolio = await loadPortfolio(store, r)
     runtime.lastBalances = portfolio.balances
     store.flush()
-    if (!portfolio.degraded) maybeReport(runtime, portfolio.total)
+    maybeReport(runtime, portfolio.total, portfolio.degraded)
     return portfolio
   })
 
