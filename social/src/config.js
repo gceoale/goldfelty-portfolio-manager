@@ -37,9 +37,6 @@ export const DEFAULTS = {
   },
   video: {
     auto: true,
-    tts: 'auto',
-    elevenlabsApiKey: '',
-    elevenlabsVoices: {},
     ffmpeg: '',
   },
   ports: { oauth: 8787, ui: 8788 },
@@ -64,7 +61,6 @@ export function normalizeConfig(raw) {
       cfg[platform][key] = Number.isFinite(n) ? Math.max(0, Math.min(max, Math.floor(n))) : max;
     }
   }
-  if (!['auto', 'kokoro', 'elevenlabs', 'system', 'none'].includes(cfg.video.tts)) cfg.video.tts = 'auto';
   if (!['public', 'unlisted', 'private'].includes(cfg.youtube.privacyStatus)) {
     cfg.youtube.privacyStatus = 'private';
   }

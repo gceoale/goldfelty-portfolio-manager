@@ -1,154 +1,37 @@
 {
-  "premise": "Your seven wallets have a group chat, and none of them knows where your money is.",
-  "format": "text-message chat into skit",
-  "title": "My 7 wallets have a group chat (it's not going well) #Shorts",
-  "description": "Seven wallets, zero idea what you own. Goldfelty puts every wallet in one place.\n\nhttps://goldfelty.com",
-  "cast": [
+  "premise": "You don't have a portfolio, you have tabs.",
+  "title": "You don't have a portfolio. You have eleven tabs. #Shorts",
+  "description": "Every wallet you use, one total. Goldfelty is free. https://goldfelty.com",
+  "beats": [
     {
-      "id": "me",
-      "name": "Me",
-      "voice": "anxious",
-      "look": "person",
-      "color": "blue"
+      "kind": "type",
+      "text": "You don’t have a *portfolio.*",
+      "demo": "none"
     },
     {
-      "id": "w3",
-      "name": "Wallet #3",
-      "voice": "smug",
-      "look": "wallet",
-      "color": "orange"
+      "kind": "type",
+      "text": "You have *eleven tabs.*",
+      "demo": "none"
     },
     {
-      "id": "w6",
-      "name": "Wallet #6",
-      "voice": "deadpan",
-      "look": "wallet",
-      "color": "purple"
+      "kind": "demo",
+      "text": "Connect your wallets *once.*",
+      "demo": "connect"
     },
     {
-      "id": "gf",
-      "name": "Goldfelty",
-      "voice": "narrator",
-      "look": "goldfelty",
-      "color": "gold"
-    }
-  ],
-  "scenes": [
-    {
-      "kind": "hook",
-      "caption": "POV: you own 7 wallets",
-      "screen": "none",
-      "hotspot": "none",
-      "chaos_items": [],
-      "lines": [
-        {
-          "speaker": "me",
-          "text": "How much crypto do I actually have?",
-          "sfx": "none"
-        }
-      ]
+      "kind": "demo",
+      "text": "Then close *all eleven.*",
+      "demo": "one-total"
     },
     {
-      "kind": "chat",
-      "caption": "",
-      "screen": "none",
-      "hotspot": "none",
-      "chaos_items": [],
-      "lines": [
-        {
-          "speaker": "me",
-          "text": "Guys. Where is my money?",
-          "sfx": "none"
-        },
-        {
-          "speaker": "w3",
-          "text": "Not it. Gas money and a frog coin.",
-          "sfx": "none"
-        },
-        {
-          "speaker": "w6",
-          "text": "$4 and a token you bought at 2am.",
-          "sfx": "none"
-        },
-        {
-          "speaker": "w6",
-          "text": "Ask the 2021 wallet. He's never in this chat.",
-          "sfx": "none"
-        }
-      ]
+      "kind": "demo",
+      "text": "Even Exodus counts. *Read-only.*",
+      "demo": "exodus"
     },
     {
-      "kind": "chaos",
-      "caption": "Adding it up the old way",
-      "screen": "none",
-      "hotspot": "none",
-      "chaos_items": [
-        "Wallet #1",
-        "Wallet #2",
-        "Wallet #3",
-        "Block explorer",
-        "portfolio_FINAL_v7.xlsx",
-        "Price site",
-        "Wallet #6",
-        "Calculator"
-      ],
-      "lines": [
-        {
-          "speaker": "me",
-          "text": "The spreadsheet is from March.",
-          "sfx": "scratch"
-        }
-      ]
-    },
-    {
-      "kind": "dialogue",
-      "caption": "",
-      "screen": "none",
-      "hotspot": "none",
-      "chaos_items": [],
-      "lines": [
-        {
-          "speaker": "gf",
-          "text": "Or. One app.",
-          "sfx": "ding"
-        }
-      ]
-    },
-    {
-      "kind": "app",
-      "caption": "Every wallet. One total.",
-      "screen": "overview",
-      "hotspot": "wallets",
-      "chaos_items": [],
-      "lines": []
-    },
-    {
-      "kind": "punchline",
-      "caption": "The 2021 wallet was here all along",
-      "screen": "none",
-      "hotspot": "none",
-      "chaos_items": [],
-      "lines": [
-        {
-          "speaker": "w6",
-          "text": "Great. Now he's in the chat.",
-          "sfx": "fail"
-        }
-      ]
-    },
-    {
-      "kind": "outro",
-      "caption": "Every wallet. One app.",
-      "screen": "none",
-      "hotspot": "none",
-      "chaos_items": [],
-      "lines": [
-        {
-          "speaker": "gf",
-          "text": "Goldfelty. Free. goldfelty.com",
-          "sfx": "cash"
-        }
-      ]
+      "kind": "end",
+      "text": "Every wallet. *One app.*",
+      "demo": "none"
     }
   ]
 }

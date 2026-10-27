@@ -184,7 +184,7 @@
     })
   }
 
-  var SECRET_INPUTS = ['anthropicApiKey', 'video.elevenlabsApiKey']
+  var SECRET_INPUTS = ['anthropicApiKey']
   var WINDOW_INPUTS = ['x.windows', 'reddit.windows', 'youtube.windows']
 
   function renderSettings() {

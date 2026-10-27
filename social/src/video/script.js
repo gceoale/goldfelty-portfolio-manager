@@ -1,138 +1,95 @@
-// Writes the comedy script for a Short, then has a second pass judge it.
+// Writes a Short's script, then has a tough editor judge it.
+//
+// A Short is a handful of beats: kinetic type on the brand background, and
+// real moments in the app with a cursor and camera moves. No characters, no
+// narration. The joke lives in the copy and the cut.
 import { callClaude } from '../generate.js';
-import { SCREEN_NAMES, HOTSPOT_NAMES, screensForPrompt } from './screens.js';
+import { DEMO_NAMES, demosForPrompt } from './demos.js';
 
-export const VOICES = ['narrator', 'upbeat', 'deadpan', 'dramatic', 'anxious', 'smug'];
-export const LOOKS = ['person', 'friend', 'wallet', 'coin', 'goldfelty', 'none'];
-export const COLORS = ['gold', 'blue', 'orange', 'purple', 'green', 'red', 'pink', 'gray'];
-export const SFX = ['none', 'pop', 'whoosh', 'ding', 'boing', 'scratch', 'drumroll', 'fail', 'cash'];
-export const KINDS = ['hook', 'dialogue', 'chat', 'chaos', 'app', 'punchline', 'outro'];
-
+export const KINDS = ['type', 'demo', 'end'];
+export const MAX_WORDS = 9;
 const str = { type: 'string' };
 
 export const SPEC_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['premise', 'format', 'title', 'description', 'cast', 'scenes'],
+  required: ['premise', 'title', 'description', 'beats'],
   properties: {
     premise: str,
-    format: str,
     title: str,
     description: str,
-    cast: {
+    beats: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'name', 'voice', 'look', 'color'],
-        properties: {
-          id: str,
-          name: str,
-          voice: { type: 'string', enum: VOICES },
-          look: { type: 'string', enum: LOOKS },
-          color: { type: 'string', enum: COLORS },
-        },
-      },
-    },
-    scenes: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['kind', 'caption', 'screen', 'hotspot', 'chaos_items', 'lines'],
+        required: ['kind', 'text', 'demo'],
         properties: {
           kind: { type: 'string', enum: KINDS },
-          caption: str,
-          screen: { type: 'string', enum: ['none', ...SCREEN_NAMES] },
-          hotspot: { type: 'string', enum: ['none', ...HOTSPOT_NAMES] },
-          chaos_items: { type: 'array', items: str },
-          lines: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['speaker', 'text', 'sfx'],
-              properties: {
-                speaker: str,
-                text: str,
-                sfx: { type: 'string', enum: SFX },
-              },
-            },
-          },
+          text: str,
+          demo: { type: 'string', enum: ['none', ...DEMO_NAMES] },
         },
       },
     },
   },
 };
 
-export const WRITER_SYSTEM = `You write short, genuinely funny vertical videos (YouTube Shorts, 20 to 35 seconds) for Goldfelty's own channel. Goldfelty is a free desktop app that shows all of someone's crypto wallets in one place, and lets them send from one screen while their own wallet approves everything.
+export const WRITER_SYSTEM = `You write the copy for short vertical videos (YouTube Shorts, 14 to 22 seconds) for Goldfelty, a free desktop app that shows all of someone's crypto wallets in one place and lets them send from one screen while their own wallet approves everything.
 
-The comedy lives in relatable self-custody pain: seven wallets and no idea what's in which; 40 browser tabs to add up one number; the spreadsheet updated once in March; checking the total at 3am; "which chain did I bridge that to"; explaining your setup to family; seed-phrase paranoia; tiny gas fees that somehow add up; the token you forgot you had. Goldfelty shows up as the payoff that ends the pain, never as the butt of the joke.
+The look is a premium product film: big serif type on a warm off-white background, then the real app with a cursor and smooth camera moves. There are no characters and no voice-over. Think of the best Apple, Arc or Linear ads: the joke is in the writing and the edit.
 
-Craft:
-- Hook in the first two seconds: a specific, slightly absurd, instantly relatable situation. The first spoken line and the hook caption must make a scroller stop.
-- One clear premise per video. Escalate: each beat bigger than the last (rule of three works).
-- Characters with strong attitudes: the anxious owner, a smug or needy wallet, a deadpan Goldfelty, a mock nature-documentary or movie-trailer narrator. Give wallets and coins personalities.
-- Talk as little as possible. Let the visuals, captions, text messages and sound effects carry the jokes; spoken lines are the punch, not the explanation.
-- At most 35 spoken words in the whole video, and most scenes have no spoken line or just one. Each spoken line is at most 8 words. Chat messages don't count: they are shown, not read aloud.
-- Never narrate what's already on screen, and never explain a joke.
-- Show the real app once or twice with a screen and one concrete fact from the facts sheet, said with a joke, not a sales pitch.
-- End on a punchline or callback, then a 2 to 4 second outro that says goldfelty.com. No "link in bio", no "smash that like button".
-- Rotate formats between videos: text-message chat, two-character skit, POV, expectation versus reality, nature documentary, movie trailer, "things nobody tells you".
+Voice: dry, observational, quietly confident. One true, specific, slightly painful observation about life with many crypto wallets, then the app resolves it. Wit over puns. Understatement over hype. Never "game-changer", "unlock", "seamless", "revolutionize", "level up", emojis, exclamation marks or rhetorical "Imagine if...".
 
-Scenes (render as vertical video, 5 to 9 scenes):
-- hook: big caption (at most 7 words) plus a spoken line. Always first.
-- dialogue: characters on screen talking; the speaker animates.
-- chat: a phone text conversation; each line is a message, shown on screen with a pop and not read aloud. Keep messages short.
-- chaos: windows and tabs piling up; chaos_items are their titles (wallet names, "portfolio_FINAL_v7.xlsx", "block explorer", "price site").
-- app: a real Goldfelty screen (pick screen and hotspot) with a caption and a line about it.
-- punchline: big caption for the biggest laugh.
-- outro: always last; caption like "Every wallet. One app." and at most one short line, ending with goldfelty.com.
-Fields that don't apply to a scene: caption "", screen "none", hotspot "none", chaos_items []. sfx can punctuate a line ("none" mostly; use them for timing, not on every line).
+Beats (4 to 7, in order):
+- type: one line of big type on its own. At most ${MAX_WORDS} words. Use for the hook and the setup.
+- demo: a real moment in the app (pick it in "demo"), with one short line above it. At most ${MAX_WORDS} words. The line should land a beat against what's shown, not describe it.
+- end: always last, exactly once. Its text is the sign-off line, like "Every wallet. *One app.*"
+Wrap one or two words per line in *asterisks* for gold italic emphasis; that's where the eye lands, so put it on the punch.
+The first beat must stop a scroll on its own. Use 1 to 3 demos per video. "demo" is "none" for type and end beats.
 
-Cast: 1 to 3 characters plus an optional narrator (look "none"). Each id is referenced as the speaker of lines. Use distinct voices.
+Real moments you can show:
+${demosForPrompt()}
+They show demo wallets; never imply they are anyone's real money.
 
-Honesty: it's an obvious skit, never a fake testimonial or a "real user". Everything said about Goldfelty must be in the facts sheet; screens show demo wallets, so don't imply they are someone's real money. No price predictions, returns or investment advice, no "to the moon". Don't disparage real people or other companies; wallet brands can appear as characters only in friendly ways.
+Honesty: every claim about Goldfelty must come from the facts sheet. No price predictions, returns or investment advice. Don't mock real people or other companies.
 
-Title: at most 70 characters, funny, no clickbait lies, ending with " #Shorts". Description: 1 to 2 sentences plus https://goldfelty.com.`;
+Title: at most 70 characters, written like the video's best line, ending with " #Shorts". Description: one sentence plus https://goldfelty.com.`;
 
 export function writerPrompt({ facts, recentPremises, lessons, feedback, format }) {
   return `<facts>
 ${facts}
 </facts>
 
-<screens>
-${screensForPrompt()}
-</screens>
-
 <recent_videos>
 ${recentPremises.length ? recentPremises.map((p) => `- ${p}`).join('\n') : '(none yet)'}
 </recent_videos>
 ${lessons ? `\n<how_recent_videos_did>\n${lessons}\n</how_recent_videos_did>\n` : ''}
-Write one new video with a premise and format different from the recent ones${format ? ` (format: ${format})` : ''}.${feedback ? `\n\nA previous draft was turned down. Reviewer's notes, fix these:\n${feedback}` : ''}`;
+Write one new video whose observation is different from the recent ones${format ? ` (angle: ${format})` : ''}.${feedback ? `\n\nA previous draft was turned down. The editor's notes, fix these:\n${feedback}` : ''}`;
 }
 
 export const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['funny', 'hook', 'accurate', 'publish', 'notes'],
+  required: ['funny', 'hook', 'premium', 'accurate', 'publish', 'notes'],
   properties: {
     funny: { type: 'integer' },
     hook: { type: 'integer' },
+    premium: { type: 'integer' },
     accurate: { type: 'boolean' },
     publish: { type: 'boolean' },
     notes: str,
   },
 };
 
-const REVIEW_SYSTEM = `You are a tough comedy editor and fact checker for Goldfelty's YouTube Shorts. The video will be published automatically if you approve it.
+const REVIEW_SYSTEM = `You are the creative director and fact checker for Goldfelty's YouTube Shorts: big serif type and real app footage, no characters, no voice. A video you approve is published automatically, so be hard to please.
 
-Score honestly from 1 to 10:
-- funny: would a crypto-curious viewer actually laugh or smile? Generic jokes, puns without a setup, and ad-speak score low.
-- hook: would the first two seconds stop someone scrolling?
-accurate: false if anything said about Goldfelty isn't supported by the facts sheet, if it gives financial advice or price predictions, if it poses as a real testimonial, or if it disparages a real person or company.
-publish: true only if funny >= 7, hook >= 7 and accurate.
-notes: the specific changes that would make it funnier or fix it.`;
+Score 1 to 10:
+- funny: does the copy earn a smile or a "ha, true"? Generic, punny or sales-y copy scores low.
+- hook: would the first beat stop someone scrolling?
+- premium: does it read like a top-tier brand ad? Anything that smells of AI-written marketing ("unlock", "seamless", "game-changer", hype, filler, explaining the joke, more than 9 words on a line) scores 4 or less.
+accurate: false if anything about Goldfelty isn't supported by the facts sheet, if it gives financial advice or price predictions, or if it mocks real people or companies.
+publish: true only if funny >= 7, hook >= 7, premium >= 8 and accurate.
+notes: the specific changes that would make it sharper.`;
 
 export async function reviewSpec(client, { config, facts, spec }) {
   return callClaude(client, {
@@ -144,33 +101,34 @@ export async function reviewSpec(client, { config, facts, spec }) {
   });
 }
 
+export function wordCount(text) {
+  return String(text).replace(/\*/g, '').split(/\s+/).filter(Boolean).length;
+}
+
 // Fixes what a model can get slightly wrong, and refuses what can't be fixed.
 export function normalizeSpec(spec) {
-  const cast = (spec.cast || []).slice(0, 4);
-  if (!cast.length) throw new Error('The script has no cast.');
-  const ids = new Set(cast.map((c) => c.id));
-  let scenes = (spec.scenes || []).filter((s) => KINDS.includes(s.kind)).slice(0, 12);
-  for (const s of scenes) {
-    s.lines = (s.lines || [])
-      .filter((l) => l.text && l.text.trim())
-      .map((l) => ({ ...l, text: l.text.trim(), speaker: ids.has(l.speaker) ? l.speaker : cast[0].id, sfx: SFX.includes(l.sfx) ? l.sfx : 'none' }));
-    if (s.kind === 'app' && !SCREEN_NAMES.includes(s.screen)) s.screen = 'overview';
-    if (s.screen !== 'none' && !SCREEN_NAMES.includes(s.screen)) s.screen = 'none';
-    s.chaos_items = (s.chaos_items || []).slice(0, 12);
-  }
-  scenes = scenes.filter((s) => s.lines.length || ['chaos', 'punchline', 'outro', 'hook', 'app'].includes(s.kind));
-  if (scenes.length < 3) throw new Error('The script is too short.');
-  if (scenes.at(-1).kind !== 'outro') {
-    scenes.push({ kind: 'outro', caption: 'Every wallet. One app.', screen: 'none', hotspot: 'none', chaos_items: [], lines: [] });
-  }
-  const title = String(spec.title || 'Goldfelty').replace(/[<>]/g, '').slice(0, 100);
-  const description = String(spec.description || '').replace(/[<>]/g, '');
+  let beats = (spec.beats || [])
+    .filter((b) => KINDS.includes(b.kind))
+    .map((b) => ({
+      kind: b.kind,
+      text: String(b.text || '').replace(/\s+/g, ' ').trim(),
+      demo: b.kind === 'demo' && DEMO_NAMES.includes(b.demo) ? b.demo : 'none',
+    }))
+    .filter((b) => b.kind !== 'demo' || b.demo !== 'none')
+    .filter((b) => b.text || b.kind === 'end');
+  beats = beats.filter((b) => b.kind !== 'end');
+  if (beats.length < 2) throw new Error('The script is too short.');
+  if (beats.some((b) => wordCount(b.text) > MAX_WORDS + 3)) throw new Error('A line is far too long.');
+  const end = (spec.beats || []).find((b) => b.kind === 'end');
+  beats = beats.slice(0, 7);
+  beats.push({ kind: 'end', text: end?.text?.trim() || 'Every wallet. *One app.*', demo: 'none' });
+  const title = String(spec.title || 'Goldfelty').replace(/[<>*]/g, '').slice(0, 100);
+  const description = String(spec.description || '').replace(/[<>*]/g, '');
   return {
-    ...spec,
+    premise: String(spec.premise || ''),
     title,
     description: description.includes('goldfelty.com') ? description : `${description}\n\nhttps://goldfelty.com`.trim(),
-    cast,
-    scenes,
+    beats,
   };
 }
 
@@ -184,11 +142,17 @@ export async function writeVideo(client, { config, facts, recentPremises = [], l
       prompt: writerPrompt({ facts, recentPremises, lessons, feedback, format }),
       schema: SPEC_SCHEMA,
     });
-    const spec = normalizeSpec(raw);
+    let spec;
+    try {
+      spec = normalizeSpec(raw);
+    } catch (err) {
+      feedback = err.message;
+      continue;
+    }
     const review = await reviewSpec(client, { config, facts, spec });
-    log(`Script "${spec.premise}": funny ${review.funny}/10, hook ${review.hook}/10${review.accurate ? '' : ', not accurate'}`);
-    if (review.publish && review.accurate && review.funny >= 7 && review.hook >= 7) return { spec, review };
+    log(`Script "${spec.premise}": funny ${review.funny}, hook ${review.hook}, premium ${review.premium}${review.accurate ? '' : ', not accurate'}`);
+    if (review.publish && review.accurate && review.funny >= 7 && review.hook >= 7 && review.premium >= 8) return { spec, review };
     feedback = review.notes;
   }
-  throw new Error('Three scripts in a row weren’t funny or accurate enough; trying again later.');
+  throw new Error('Three scripts in a row weren’t good enough; trying again later.');
 }

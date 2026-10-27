@@ -1,4 +1,4 @@
-// Script -> voices -> timing -> audio mix -> frames -> MP4.
+// Script -> timing -> sound -> frames -> MP4.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,23 +7,9 @@ import { loadFacts } from '../generate.js';
 import { loadQueue } from '../queue.js';
 import { score } from '../metrics.js';
 import { writeVideo, normalizeSpec } from './script.js';
-import { chooseProvider, castVoices, speak, silence } from './tts.js';
 import { buildTimeline } from './timeline.js';
-import { loadAssets } from './screens.js';
-import { findFfmpeg, makeSfx, mixAudio, playerHtml, renderFrames } from './render.js';
-
-// Long enough to read a text message at a glance.
-export function chatTime(text) {
-  return 0.7 + text.split(/\s+/).filter(Boolean).length * 0.24;
-}
-
-async function chatPause(ffmpeg, text, cacheDir) {
-  fs.mkdirSync(cacheDir, { recursive: true });
-  const seconds = chatTime(text);
-  const file = path.join(cacheDir, `chat-${seconds.toFixed(2)}.wav`);
-  if (!fs.existsSync(file)) await silence(ffmpeg, seconds, file);
-  return { file, duration: seconds };
-}
+import { DEMOS, loadAssets } from './demos.js';
+import { findFfmpeg, makeSfx, makeBed, mixAudio, playerHtml, renderFrames } from './render.js';
 
 export const SAMPLE = fileURLToPath(new URL('./sample.json', import.meta.url));
 
@@ -39,7 +25,7 @@ export function videoHistory(items) {
   const measured = videos.filter((i) => i.status === 'posted' && i.metrics).sort((a, b) => score(b.metrics) - score(a.metrics));
   const lessons = measured.length >= 3
     ? measured
-      .map((i) => `- ${i.metrics.views} views, ${i.metrics.likes} likes, ${i.metrics.replies} comments: ${i.content.premise} (${i.content.format || 'format unknown'})`)
+      .map((i) => `- ${i.metrics.views} views, ${i.metrics.likes} likes, ${i.metrics.replies} comments: ${i.content.premise}`)
       .slice(0, 6)
       .join('\n')
     : '';
@@ -55,46 +41,28 @@ export async function makeVideo(deps, { client, spec, format = '', log = deps.lo
     ({ spec: finalSpec, review } = await writeVideo(client, { config, facts: loadFacts(), recentPremises, lessons, format, log }));
   }
   const ffmpeg = await findFfmpeg(config);
-  const provider = chooseProvider(config);
-  const voices = castVoices(finalSpec.cast);
-  const cacheDir = dataPath('cache/voices');
-  log(`Voices: ${provider === 'none' ? 'none (captions only)' : provider}`);
-
-  const durations = [];
-  const spoken = [];
-  for (const [si, scene] of finalSpec.scenes.entries()) {
-    durations[si] = [];
-    for (const [li, line] of scene.lines.entries()) {
-      // Chat messages are read on screen, not aloud.
-      const { file, duration } = scene.kind === 'chat'
-        ? await chatPause(ffmpeg, line.text, cacheDir)
-        : await speak({ text: line.text, voice: voices[line.speaker], provider, config, ffmpeg, cacheDir, fetchImpl: deps.fetch });
-      durations[si][li] = duration;
-      spoken.push({ si, li, file });
-    }
-  }
-  const timeline = buildTimeline(finalSpec, durations);
-  const lines = spoken.map(({ si, li, file }) => ({ file, start: timeline.scenes[si].lines[li].start }));
+  const timeline = buildTimeline(finalSpec, DEMOS);
 
   fs.mkdirSync(outDir, { recursive: true });
   const stamp = new Date(deps.now()).toISOString().slice(0, 10);
   const base = path.join(outDir, `${stamp}-${slug(finalSpec.title)}`);
   const audio = `${base}.m4a`;
-  const sfxFiles = await makeSfx(ffmpeg, dataPath('cache/sfx'));
+  const cache = dataPath('cache/sfx');
+  const sfxFiles = await makeSfx(ffmpeg, cache);
+  const bed = await makeBed(ffmpeg, timeline.duration, path.join(cache, `bed-${timeline.duration.toFixed(2)}.wav`));
   const { music } = await mixAudio({
     ffmpeg,
-    lines,
     sfxEvents: timeline.sfx,
     sfxFiles,
     duration: timeline.duration,
     musicDir: dataPath('music'),
     seed: finalSpec.title,
     output: audio,
+    bed,
   });
   if (music) log(`Music: ${path.basename(music)}`);
 
-  const screens = [...new Set(['overview', ...finalSpec.scenes.map((s) => s.screen).filter((s) => s && s !== 'none')])];
-  const html = playerHtml({ timeline, cast: finalSpec.cast, assets: loadAssets(screens) });
+  const html = playerHtml({ timeline, assets: loadAssets([...new Set(finalSpec.beats.map((b) => b.demo))]) });
   const file = `${base}.mp4`;
   const started = Date.now();
   let lastPct = -1;
@@ -112,7 +80,7 @@ export async function makeVideo(deps, { client, spec, format = '', log = deps.lo
     },
   });
   fs.rmSync(audio, { force: true });
-  fs.writeFileSync(`${base}.json`, JSON.stringify({ spec: finalSpec, review, provider }, null, 2));
+  fs.writeFileSync(`${base}.json`, JSON.stringify({ spec: finalSpec, review }, null, 2));
   appendLog(`made video ${path.basename(file)} (${timeline.duration.toFixed(1)}s, ${Math.round((Date.now() - started) / 1000)}s to render)`);
   return { file, spec: finalSpec, review, duration: timeline.duration };
 }

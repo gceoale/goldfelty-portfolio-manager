@@ -40,6 +40,10 @@ try {
 
 const APP = path.resolve(__dirname, '..')
 const OUT = process.env.SHOT_DIR ?? path.join(APP, 'release', 'e2e')
+// For video and site captures: E2E_SCALE=2 doubles pixel density, and
+// E2E_CLEAN=1 keeps notification toasts out of the shots.
+const SCALE = Number(process.env.E2E_SCALE) || 1
+const CLEAN = process.env.E2E_CLEAN === '1'
 const USER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'goldfelty-e2e-'))
 const FEE_ADDRESS = '0x8617E340B3D01FA5F11F306F4090FD50E238070D'
 const RECIPIENT = '0x1111111111111111111111111111111111111111'
@@ -425,12 +429,34 @@ function makeWalletBackend() {
     if (msg.type() === 'error' || /Content Security Policy/i.test(msg.text())) problems.push(`console: ${msg.text()}`)
   })
   page.on('pageerror', (err) => problems.push(`pageerror: ${err.message}`))
-  await page.setViewportSize({ width: 1240, height: 800 })
+  if (SCALE === 1) {
+    await page.setViewportSize({ width: 1240, height: 800 })
+  } else {
+    // Same 1240x800 layout, drawn at SCALE times the pixels: a bigger
+    // window with the page zoomed to match.
+    await app.evaluate(({ BrowserWindow }, scale) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      win.setContentSize(1240 * scale, 800 * scale)
+      win.webContents.setZoomFactor(scale)
+    }, SCALE)
+    await page.waitForTimeout(300)
+  }
   await page.waitForLoadState('domcontentloaded')
 
   const shot = async (name) => {
     await page.waitForTimeout(250)
-    await page.screenshot({ path: path.join(OUT, `${name}.png`) })
+    // Through the CSSOM: the app's CSP rightly refuses injected style tags.
+    const hide = (on) => document.querySelectorAll('.toasts').forEach((el) => (el.style.visibility = on ? 'hidden' : ''))
+    if (CLEAN) await page.evaluate(hide, true)
+    if (SCALE === 1) await page.screenshot({ path: path.join(OUT, `${name}.png`) })
+    else {
+      // Playwright crops to its own idea of the viewport; Electron grabs the window.
+      const png = await app.evaluate(async ({ BrowserWindow }) =>
+        (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')
+      )
+      fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(png, 'base64'))
+    }
+    if (CLEAN) await page.evaluate(hide, false)
     console.log('  shot', name)
   }
   const step = (text) => console.log(`• ${text}`)

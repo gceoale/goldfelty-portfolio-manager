@@ -63,7 +63,7 @@ export function trimQueue(items) {
 // Values that must never show up in a (public) Actions log.
 export function secretsIn(state) {
   const c = state.config || {};
-  const out = [c.anthropicApiKey, c.x?.clientSecret, c.reddit?.clientSecret, c.youtube?.clientSecret, c.video?.elevenlabsApiKey];
+  const out = [c.anthropicApiKey, c.x?.clientSecret, c.reddit?.clientSecret, c.youtube?.clientSecret];
   for (const t of Object.values(state.tokens || {})) out.push(t.access_token, t.refresh_token);
   return out.filter((v) => typeof v === 'string' && v.length >= 6);
 }
