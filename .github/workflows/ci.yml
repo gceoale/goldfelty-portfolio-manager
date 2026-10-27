@@ -72,6 +72,25 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  social:
+    name: Social autopilot tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The cloud test runs the real Worker code, so it needs api/ too.
+      - run: npm ci
+        working-directory: api
+      - run: npm ci
+        working-directory: social
+      # Video tests draw frames in the runner's installed Chrome.
+      - run: npm test
+        working-directory: social
+
   e2e:
     name: End-to-end
     runs-on: ubuntu-latest

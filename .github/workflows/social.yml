@@ -1,0 +1,62 @@
+name: Social autopilot
+
+# Runs Goldfelty's social autopilot (social/) every half hour: writes and
+# checks posts, makes the daily Short, and posts what's due on X, Reddit and
+# YouTube. Its settings, sign-ins and queue live on api.goldfelty.com and are
+# managed at goldfelty.com/admin/social/. Needs only the GOLDFELTY_ADMIN_TOKEN
+# secret; everything else is entered on that page. Until accounts are
+# connected each run just says so.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time, never cancelled half way through a post.
+concurrency:
+  group: social-autopilot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run
+    if: github.repository == 'gceoale/goldfelty-portfolio-manager'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: social
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: social/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Check the admin token
+        id: token
+        env:
+          GOLDFELTY_ADMIN_TOKEN: ${{ secrets.GOLDFELTY_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$GOLDFELTY_ADMIN_TOKEN" ]; then
+            echo "No GOLDFELTY_ADMIN_TOKEN secret, so the autopilot can't reach its settings." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Videos are drawn in the runner's Chrome; install Playwright's own
+      # browser only if that's missing.
+      - name: Browser for videos
+        if: steps.token.outputs.ready == 'true'
+        run: command -v google-chrome >/dev/null || npx playwright install --with-deps chromium
+      - name: Run once
+        if: steps.token.outputs.ready == 'true'
+        env:
+          GOLDFELTY_ADMIN_TOKEN: ${{ secrets.GOLDFELTY_ADMIN_TOKEN }}
+        run: node bin/goldfelty-social.js cloud-run

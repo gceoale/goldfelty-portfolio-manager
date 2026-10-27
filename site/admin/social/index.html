@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src https://api.goldfelty.com; base-uri 'none'; form-action 'none'" />
+<title>Social autopilot · Goldfelty</title>
+<link rel="icon" href="/icon.png?v=2" />
+<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/admin/social/social.css?v=1" />
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><img class="mark" src="/mark.png" alt="" width="24" height="24" /> Goldfelty</a>
+    <nav><a href="/admin/">Users</a><span class="muted">Social</span></nav>
+  </header>
+
+  <h1>Social autopilot</h1>
+  <p class="muted">
+    Writes, checks and posts on Goldfelty's own X, Reddit and YouTube accounts, and makes a Short a day. It runs every
+    half hour on GitHub, so nothing here needs your computer on.
+  </p>
+
+  <form class="signin" id="signin">
+    <input id="token" type="password" autocomplete="off" placeholder="Admin token" aria-label="Admin token" />
+    <button class="btn" type="submit">Open</button>
+    <button class="btn plain" type="button" id="forget">Forget token</button>
+  </form>
+  <p class="banner" id="banner" hidden></p>
+  <p class="muted" id="status"></p>
+
+  <div id="app" hidden>
+    <section class="panel run">
+      <div class="run-main">
+        <div class="pill" id="state">–</div>
+        <div>
+          <div id="last-run" class="strong">–</div>
+          <div id="last-error" class="err" hidden></div>
+        </div>
+      </div>
+      <div class="run-actions">
+        <button class="btn" id="toggle" type="button">Pause</button>
+        <button class="btn plain" id="refresh" type="button">Refresh</button>
+      </div>
+    </section>
+
+    <div class="checklist" id="checklist"></div>
+
+    <h2>Accounts</h2>
+    <p class="muted">
+      Each platform needs a developer app of your own (free); paste its keys, then Connect. Use the callback URL shown
+      for each one when you create the app.
+    </p>
+    <div class="cards" id="accounts"></div>
+
+    <h2>Keys and settings</h2>
+    <div class="panel">
+      <div class="field">
+        <label for="anthropicApiKey">Anthropic API key <span class="req">needed</span></label>
+        <div class="row"><input id="anthropicApiKey" type="password" autocomplete="off" /><span class="saved" data-for="anthropicApiKey"></span></div>
+        <p class="hint">Writes and checks every post and video. From console.anthropic.com.</p>
+      </div>
+      <div class="field">
+        <label for="video.openaiApiKey">OpenAI API key, for Short voices <span class="opt">recommended</span></label>
+        <div class="row"><input id="video.openaiApiKey" type="password" autocomplete="off" /><span class="saved" data-for="video.openaiApiKey"></span></div>
+        <p class="hint">Without a voice key, Shorts are captions only. About a cent per video. platform.openai.com.</p>
+      </div>
+      <div class="field">
+        <label for="video.elevenlabsApiKey">ElevenLabs API key <span class="opt">optional, instead of OpenAI</span></label>
+        <div class="row"><input id="video.elevenlabsApiKey" type="password" autocomplete="off" /><span class="saved" data-for="video.elevenlabsApiKey"></span></div>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label for="timezone">Your time zone</label>
+          <select id="timezone"></select>
+          <p class="hint">Posting windows are in this time.</p>
+        </div>
+        <div class="field">
+          <label for="youtube.privacyStatus">New Shorts are</label>
+          <select id="youtube.privacyStatus">
+            <option value="public">Public</option>
+            <option value="unlisted">Unlisted</option>
+            <option value="private">Private</option>
+          </select>
+        </div>
+      </div>
+      <label class="check"><input id="video.auto" type="checkbox" /> Make and post a funny Short every day</label>
+      <div class="grid3">
+        <div class="field"><label for="x.windows">X posting windows</label><input id="x.windows" placeholder="09:00-11:00, 13:00-15:00, 18:00-20:00" /></div>
+        <div class="field"><label for="reddit.windows">Reddit window</label><input id="reddit.windows" placeholder="10:00-12:00" /></div>
+        <div class="field"><label for="youtube.windows">YouTube window</label><input id="youtube.windows" placeholder="16:00-19:00" /></div>
+      </div>
+      <p class="hint">At most 3 X posts a day (1 thread), 1 Reddit post, 1 Short, one per window. Those limits are fixed.</p>
+      <div class="actions"><button class="btn" id="save-settings" type="button">Save</button><span class="muted" id="settings-status"></span></div>
+    </div>
+
+    <h2>What it may say about Goldfelty</h2>
+    <p class="muted">Every post and video is checked against this. Keep it current; nothing else gets claimed.</p>
+    <div class="panel">
+      <textarea id="facts" rows="14" spellcheck="true"></textarea>
+      <div class="actions"><button class="btn" id="save-facts" type="button">Save facts</button><span class="muted" id="facts-status"></span></div>
+    </div>
+
+    <h2>Coming up</h2>
+    <p class="muted">Approved and waiting for their window. Remove anything you don't want to go out.</p>
+    <div class="list" id="upcoming"></div>
+
+    <h2>Posted</h2>
+    <div class="list" id="posted"></div>
+
+    <h2>Turned down</h2>
+    <p class="muted">Drafts the check rejected, items you removed, and posts that failed, with the reason.</p>
+    <div class="list" id="turned-down"></div>
+
+    <h2>Recent runs</h2>
+    <div class="scroll"><table id="runs"><thead><tr><th>When</th><th>Result</th></tr></thead><tbody></tbody></table></div>
+    <details class="log"><summary>Activity log</summary><pre id="log"></pre></details>
+  </div>
+
+  <footer><span>Not linked from anywhere. Only someone with the admin token sees anything here.</span></footer>
+</div>
+<script src="/admin/social/social.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goldfelty Social</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>Goldfelty Social</div>
+  <div class="head-right"><div id="mode" class="mode"></div><button id="pause">Pause</button></div>
+</header>
+<main>
+  <p id="aperror" class="error" hidden></p>
+  <section class="status" id="status"></section>
+
+  <section class="generate">
+    <input id="focus" type="text" maxlength="300" placeholder="Optional focus, e.g. “the 1.2.2 release” or “tracking Exodus read-only”">
+    <button id="gen" class="primary">Write new drafts</button>
+  </section>
+
+  <nav class="tabs" id="tabs"></nav>
+  <section id="list" class="list"></section>
+  <p id="empty" class="empty" hidden></p>
+</main>
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>

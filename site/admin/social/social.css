@@ -1,0 +1,67 @@
+.top nav a + .muted { margin-left: 4px; }
+h2 { margin: 36px 0 6px; font-size: 19px; }
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 16px;
+  margin: 12px 0;
+}
+.run { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.run-main { display: flex; gap: 14px; align-items: center; }
+.run-actions { display: flex; gap: 8px; }
+.pill {
+  font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
+  background: var(--bg-2); color: var(--text-2); white-space: nowrap;
+}
+.pill.on { background: #2f7d4f; color: #fff; }
+.pill.off { background: var(--warn-bg); color: var(--gold-text); border: 1px solid var(--warn-line); }
+.strong { font-weight: 600; }
+.err { color: #c0392b; font-size: 14px; margin-top: 2px; }
+@media (prefers-color-scheme: dark) { .err { color: #f08a80; } }
+.banner { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-2); }
+.banner.good { border-color: #2f7d4f; }
+.banner.bad { border-color: #c0392b; }
+.checklist { margin: 8px 0 0; }
+.checklist .callout { margin: 8px 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.card { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.card h3 { margin: 0; font-size: 16px; }
+.card .who { font-size: 14px; }
+.card .who.ok { color: #2f7d4f; }
+@media (prefers-color-scheme: dark) { .card .who.ok { color: #6cc28f; } }
+.card .who.no { color: var(--text-3); }
+.card details summary { cursor: pointer; font-size: 13.5px; color: var(--text-2); }
+.card details[open] summary { margin-bottom: 8px; }
+.field { margin: 10px 0; }
+.field label { display: block; font-size: 13.5px; font-weight: 500; margin-bottom: 4px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row input { flex: 1; }
+input[type='text'], input[type='password'], input:not([type]), select, textarea {
+  width: 100%; height: 34px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 14px;
+}
+textarea { height: auto; padding: 10px; font-family: var(--mono); font-size: 13px; line-height: 1.5; resize: vertical; }
+.hint { font-size: 12.5px; color: var(--text-3); margin: 4px 0 0; }
+.saved { font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
+.req, .opt { font-size: 11.5px; font-weight: 600; padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
+.req { background: var(--gold-soft); color: var(--gold-text); }
+.opt { background: var(--bg-2); color: var(--text-3); }
+.grid2, .grid3 { display: grid; gap: 0 12px; }
+.grid2 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.grid3 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.check { display: flex; gap: 8px; align-items: center; font-size: 14px; margin: 10px 0; }
+.actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.copy { display: flex; gap: 6px; align-items: center; }
+.copy code { flex: 1; font-size: 12px; }
+.list { display: grid; gap: 8px; margin-top: 10px; }
+.item { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 10px 12px; }
+.item .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--text-3); margin: 0 0 6px; }
+.item .tag { font-weight: 600; color: var(--text); background: var(--bg-2); border-radius: 4px; padding: 1px 6px; }
+.item .text { white-space: pre-wrap; font-size: 14px; overflow-wrap: anywhere; }
+.item .why { font-size: 13px; color: var(--text-2); margin-top: 6px; }
+.item .nums { font-size: 13px; font-weight: 600; margin-top: 6px; }
+.item .right { margin-left: auto; }
+.empty { color: var(--text-3); font-size: 14px; }
+.log pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: var(--bg-2); padding: 10px; border-radius: 8px; max-height: 360px; overflow: auto; }
+.log summary { cursor: pointer; margin-top: 16px; color: var(--text-2); }
